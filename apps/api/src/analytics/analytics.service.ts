@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, orders, orderItems, customers, sql, eq, inArray } from '@repo/db';
+import { type Database, orders, orderItems, customers, stores, sql, eq, and, ne, desc } from '@repo/db';
 
 export interface AnalyticsSummary {
   grossSalesMinor: number;
@@ -44,158 +44,117 @@ export interface AnalyticsSummary {
 export class AnalyticsService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
+  /**
+   * Store analytics computed by Postgres aggregates, so cost stays flat as order volume grows
+   * (nothing is loaded row-by-row into the API). Cancelled orders never count as sales.
+   */
   async getStoreAnalytics(storeId: string): Promise<AnalyticsSummary> {
-    // 1. Orders for this store only; cancelled orders never count as sales
-    const allOrders = await this.db
-      .select()
-      .from(orders)
-      .where(eq(orders.storeId, storeId))
-      .orderBy(sql`${orders.createdAt} ASC`);
-    const orderList = allOrders.filter((o) => o.orderStatus !== 'cancelled');
+    const live = and(eq(orders.storeId, storeId), ne(orders.orderStatus, 'cancelled'));
 
-    // 2. Line items belonging to those orders
-    const itemsList =
-      orderList.length > 0
-        ? await this.db
-            .select()
-            .from(orderItems)
-            .where(inArray(orderItems.orderId, orderList.map((o) => o.id)))
-        : [];
+    const [store] = await this.db
+      .select({ timezone: stores.timezone })
+      .from(stores)
+      .where(eq(stores.id, storeId));
+    const timezone = store?.timezone || 'Asia/Karachi';
+    // Group days in the store's own timezone, not UTC (an 11 pm Karachi order belongs to that day).
+    const day = sql<string>`to_char(${orders.createdAt} AT TIME ZONE ${timezone}, 'YYYY-MM-DD')`;
+    const city = sql<string>`coalesce(nullif(lower(trim(${orders.shippingCity})), ''), 'other')`;
 
-    // 3. Customers of this store
-    const custList = await this.db.select().from(customers).where(eq(customers.storeId, storeId));
+    const [[totals], [units], [crm], byDay, byCity, byPayment, top] = await Promise.all([
+      this.db
+        .select({
+          orders: sql<number>`count(*)::int`,
+          sales: sql<number>`coalesce(sum(${orders.totalMinor}), 0)::bigint`,
+          discounts: sql<number>`coalesce(sum(${orders.discountMinor}), 0)::bigint`,
+          pendingCod: sql<number>`coalesce(sum(${orders.totalMinor}) FILTER (WHERE ${orders.paymentMethod} = 'cod' AND ${orders.financialStatus} = 'pending'), 0)::bigint`,
+          returned: sql<number>`count(*) FILTER (WHERE ${orders.orderStatus} = 'returned' OR ${orders.fulfillmentStatus} = 'returned')::int`,
+          delivered: sql<number>`count(*) FILTER (WHERE ${orders.fulfillmentStatus} IN ('delivered', 'fulfilled'))::int`,
+        })
+        .from(orders)
+        .where(live),
+      this.db
+        .select({ units: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::bigint` })
+        .from(orderItems)
+        .innerJoin(orders, eq(orders.id, orderItems.orderId))
+        .where(live),
+      this.db
+        .select({
+          total: sql<number>`count(*)::int`,
+          repeat: sql<number>`count(*) FILTER (WHERE ${customers.ordersCount} > 1)::int`,
+        })
+        .from(customers)
+        .where(eq(customers.storeId, storeId)),
+      this.db
+        .select({ date: day, sales: sql<number>`sum(${orders.totalMinor})::bigint`, count: sql<number>`count(*)::int` })
+        .from(orders)
+        .where(live)
+        // Group/order by position: repeating the expression would bind the timezone as a second
+        // parameter, which Postgres treats as a different expression than the selected one.
+        .groupBy(sql`1`)
+        .orderBy(sql`1`),
+      this.db
+        .select({ city, count: sql<number>`count(*)::int`, revenue: sql<number>`sum(${orders.totalMinor})::bigint` })
+        .from(orders)
+        .where(live)
+        .groupBy(city)
+        .orderBy(desc(sql`count(*)`))
+        .limit(20),
+      this.db
+        .select({
+          method: sql<string>`upper(${orders.paymentMethod})`,
+          count: sql<number>`count(*)::int`,
+          revenue: sql<number>`sum(${orders.totalMinor})::bigint`,
+        })
+        .from(orders)
+        .where(live)
+        .groupBy(sql`upper(${orders.paymentMethod})`),
+      this.db
+        .select({
+          title: orderItems.title,
+          variantTitle: orderItems.variantTitle,
+          units: sql<number>`sum(${orderItems.quantity})::int`,
+          revenue: sql<number>`sum(${orderItems.totalMinor})::bigint`,
+        })
+        .from(orderItems)
+        .innerJoin(orders, eq(orders.id, orderItems.orderId))
+        .where(live)
+        .groupBy(orderItems.title, orderItems.variantTitle)
+        .orderBy(desc(sql`sum(${orderItems.totalMinor})`))
+        .limit(5),
+    ]);
 
-    let grossSales = 0;
-    let totalDiscounts = 0;
-    let pendingCod = 0;
-    let rtoCount = 0;
-    let deliveredOrders = 0;
-
-    const salesByDateMap = new Map<string, { sales: number; count: number }>();
-    const cityMap = new Map<string, { count: number; revenue: number }>();
-    const paymentMap = new Map<string, { count: number; revenue: number }>();
-
-    for (const ord of orderList) {
-      grossSales += ord.totalMinor;
-      totalDiscounts += ord.discountMinor || 0;
-
-      if (ord.paymentMethod === 'cod' && ord.financialStatus === 'pending') {
-        pendingCod += ord.totalMinor;
-      }
-
-      if (ord.orderStatus === 'returned' || ord.fulfillmentStatus === 'returned') {
-        rtoCount++;
-      }
-
-      if (ord.fulfillmentStatus === 'delivered' || ord.fulfillmentStatus === 'fulfilled') {
-        deliveredOrders++;
-      }
-
-      // Daily breakdown
-      const dateKey = new Date(ord.createdAt).toISOString().split('T')[0];
-      const existingDate = salesByDateMap.get(dateKey) || { sales: 0, count: 0 };
-      salesByDateMap.set(dateKey, {
-        sales: existingDate.sales + ord.totalMinor,
-        count: existingDate.count + 1,
-      });
-
-      // City breakdown
-      const cityKey = ord.shippingCity
-        ? ord.shippingCity.trim().toLowerCase()
-        : 'other';
-      const formattedCity = cityKey.charAt(0).toUpperCase() + cityKey.slice(1);
-      const existingCity = cityMap.get(formattedCity) || { count: 0, revenue: 0 };
-      cityMap.set(formattedCity, {
-        count: existingCity.count + 1,
-        revenue: existingCity.revenue + ord.totalMinor,
-      });
-
-      // Payment method breakdown
-      const methodKey = ord.paymentMethod ? ord.paymentMethod.toUpperCase() : 'COD';
-      const existingPay = paymentMap.get(methodKey) || { count: 0, revenue: 0 };
-      paymentMap.set(methodKey, {
-        count: existingPay.count + 1,
-        revenue: existingPay.revenue + ord.totalMinor,
-      });
-    }
-
-    // Top Selling Products
-    const productMap = new Map<string, { title: string; variantTitle: string; units: number; revenue: number }>();
-    let totalUnits = 0;
-    for (const item of itemsList) {
-      totalUnits += item.quantity;
-      const key = `${item.title}-${item.variantTitle}`;
-      const existingProd = productMap.get(key) || {
-        title: item.title,
-        variantTitle: item.variantTitle,
-        units: 0,
-        revenue: 0,
-      };
-      productMap.set(key, {
-        title: item.title,
-        variantTitle: item.variantTitle,
-        units: existingProd.units + item.quantity,
-        revenue: existingProd.revenue + item.totalMinor,
-      });
-    }
-
-    const topProducts = Array.from(productMap.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5)
-      .map((p) => ({
-        title: p.title,
-        variantTitle: p.variantTitle,
-        unitsSold: p.units,
-        revenueMinor: p.revenue,
-      }));
-
-    // Format City Breakdown with %
-    const totalOrdersCount = orderList.length;
-    const cityBreakdown = Array.from(cityMap.entries())
-      .map(([city, val]) => ({
-        city,
-        ordersCount: val.count,
-        revenueMinor: val.revenue,
-        percentage: Math.round((val.count / totalOrdersCount) * 100),
-      }))
-      .sort((a, b) => b.ordersCount - a.ordersCount);
-
-    // Repeat customer rate
-    const repeatCount = custList.filter((c) => c.ordersCount > 1).length;
-    const repeatRate =
-      custList.length > 0 ? Math.round((repeatCount / custList.length) * 100) : 0;
-
-    const salesOverTime = Array.from(salesByDateMap.entries()).map(([date, val]) => ({
-      date,
-      salesMinor: val.sales,
-      ordersCount: val.count,
-    }));
-
-    const aov =
-      totalOrdersCount > 0 ? Math.round(grossSales / totalOrdersCount) : 0;
-    const rtoRate =
-      totalOrdersCount > 0 ? Math.round((rtoCount / totalOrdersCount) * 100) : 0;
+    // Postgres bigint arrives as a string; every money figure is converted once, here.
+    const n = (v: number | string | null | undefined) => Number(v ?? 0);
+    const orderCount = totals.orders;
+    const grossSales = n(totals.sales);
+    const discountsTotal = n(totals.discounts);
 
     return {
       grossSalesMinor: grossSales,
-      netSalesMinor: grossSales - totalDiscounts,
-      discountsMinor: totalDiscounts,
-      totalOrders: totalOrdersCount,
-      totalUnits,
-      deliveredOrders,
-      averageOrderValueMinor: aov,
-      pendingCodMinor: pendingCod,
-      rtoRatePercent: rtoRate,
-      totalCustomers: custList.length,
-      repeatCustomersRate: repeatRate,
-      salesOverTime,
-      topProducts,
-      cityBreakdown,
-      paymentBreakdown: Array.from(paymentMap.entries()).map(([method, val]) => ({
-        method,
-        ordersCount: val.count,
-        revenueMinor: val.revenue,
+      netSalesMinor: grossSales - discountsTotal,
+      discountsMinor: discountsTotal,
+      totalOrders: orderCount,
+      totalUnits: n(units.units),
+      deliveredOrders: totals.delivered,
+      averageOrderValueMinor: orderCount > 0 ? Math.round(grossSales / orderCount) : 0,
+      pendingCodMinor: n(totals.pendingCod),
+      rtoRatePercent: orderCount > 0 ? Math.round((totals.returned / orderCount) * 100) : 0,
+      totalCustomers: crm.total,
+      repeatCustomersRate: crm.total > 0 ? Math.round((crm.repeat / crm.total) * 100) : 0,
+      salesOverTime: byDay.map((d) => ({ date: d.date, salesMinor: n(d.sales), ordersCount: d.count })),
+      topProducts: top.map((t) => ({
+        title: t.title,
+        variantTitle: t.variantTitle,
+        unitsSold: t.units,
+        revenueMinor: n(t.revenue),
       })),
+      cityBreakdown: byCity.map((c) => ({
+        city: c.city.charAt(0).toUpperCase() + c.city.slice(1),
+        ordersCount: c.count,
+        revenueMinor: n(c.revenue),
+        percentage: orderCount > 0 ? Math.round((c.count / orderCount) * 100) : 0,
+      })),
+      paymentBreakdown: byPayment.map((p) => ({ method: p.method, ordersCount: p.count, revenueMinor: n(p.revenue) })),
     };
   }
 }

@@ -2,7 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getOrders, bookCourier, updateOrderStatus, formatPrice, verifyWhatsAppOrder, formatWhatsAppUrl, errorMessage, type MerchantOrder } from '@/lib/api';
+import {
+  getOrders,
+  bookCourier,
+  updateOrderStatus,
+  formatPrice,
+  verifyWhatsAppOrder,
+  formatWhatsAppUrl,
+  errorMessage,
+  type MerchantOrder,
+  type OrderTab,
+  type OrderTabCounts,
+} from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
 import { PackingLabel } from '@/components/packing-label';
 import { Button } from '@/components/ui/button';
@@ -14,29 +25,71 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 export default function MerchantOrdersPage() {
   const [orders, setOrders] = useState<MerchantOrder[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('all');
+  const [activeTab, setActiveTab] = useState<OrderTab>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [counts, setCounts] = useState<OrderTabCounts | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedOrderForLabel, setSelectedOrderForLabel] = useState<MerchantOrder | null>(null);
   const [bookingCourierForId, setBookingCourierForId] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
 
+  // Wait until typing pauses before searching on the server.
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Tab and search are applied by the API; results come back one page at a time.
+  useEffect(() => {
+    let cancelled = false;
     async function load() {
       setLoading(true);
       try {
-        setOrders(await getOrders());
+        const page = await getOrders({ tab: activeTab, q: debouncedQuery });
+        if (cancelled) return;
+        setOrders(page.orders);
+        setNextCursor(page.nextCursor);
+        setCounts(page.counts);
       } catch (err) {
-        setError(errorMessage(err));
+        if (!cancelled) setError(errorMessage(err));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, debouncedQuery]);
+
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await getOrders({ tab: activeTab, q: debouncedQuery, cursor: nextCursor });
+      setOrders(prev => [...prev, ...page.orders]);
+      setNextCursor(page.nextCursor);
+      setCounts(page.counts);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  /** Tab badges change when an order changes state; refresh them without reloading the list. */
+  const refreshCounts = () => {
+    getOrders({ tab: activeTab, q: debouncedQuery, limit: 1 })
+      .then((page) => setCounts(page.counts))
+      .catch(() => null);
+  };
 
   const replaceOrder = (updated: MerchantOrder) => {
     setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+    refreshCounts();
   };
 
   const handleBookCourier = async (orderId: string) => {
@@ -74,25 +127,7 @@ export default function MerchantOrdersPage() {
     }
   };
 
-  // Filter orders by tab and search
-  const filteredOrders = orders.filter(order => {
-    if (activeTab === 'unverified' && (order.paymentMethod !== 'cod' || order.whatsappVerified)) return false;
-    if (activeTab === 'pending' && order.courierTrackingNumber) return false;
-    if (activeTab === 'in_transit' && order.status !== 'in_transit') return false;
-    if (activeTab === 'delivered' && order.status !== 'delivered') return false;
-    if (activeTab === 'cancelled' && order.status !== 'cancelled') return false;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = order.customerName.toLowerCase().includes(q);
-      const matchPhone = order.customerPhone.toLowerCase().includes(q);
-      const matchNum = order.orderNumber.toLowerCase().includes(q);
-      const matchTrack = (order.courierTrackingNumber || '').toLowerCase().includes(q);
-      return matchName || matchPhone || matchNum || matchTrack;
-    }
-
-    return true;
-  });
+  const filteredOrders = orders;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -110,20 +145,16 @@ export default function MerchantOrdersPage() {
 
       {/* Tabs and Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as OrderTab)}>
           <TabsList>
-            <TabsTrigger value="all">All Orders ({orders.length})</TabsTrigger>
+            <TabsTrigger value="all">All Orders ({counts?.all ?? '…'})</TabsTrigger>
             <TabsTrigger value="unverified" className="text-amber-600 dark:text-amber-400">
-              Unverified COD ({orders.filter(o => o.paymentMethod === 'cod' && !o.whatsappVerified).length})
+              Unverified COD ({counts?.unverified ?? '…'})
             </TabsTrigger>
-            <TabsTrigger value="pending">
-              Pending Dispatch ({orders.filter(o => !o.courierTrackingNumber).length})
-            </TabsTrigger>
-            <TabsTrigger value="in_transit">
-              In Transit ({orders.filter(o => o.status === 'in_transit').length})
-            </TabsTrigger>
-            <TabsTrigger value="delivered">Delivered</TabsTrigger>
-            <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
+            <TabsTrigger value="pending_dispatch">Pending Dispatch ({counts?.pending_dispatch ?? '…'})</TabsTrigger>
+            <TabsTrigger value="in_transit">In Transit ({counts?.in_transit ?? '…'})</TabsTrigger>
+            <TabsTrigger value="delivered">Delivered ({counts?.delivered ?? '…'})</TabsTrigger>
+            <TabsTrigger value="cancelled">Cancelled ({counts?.cancelled ?? '…'})</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -296,6 +327,14 @@ export default function MerchantOrdersPage() {
           </TableBody>
         </Table>
       </div>
+
+      {nextCursor && !loading && (
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="text-xs font-normal">
+            {loadingMore ? 'Loading...' : 'Load more orders'}
+          </Button>
+        </div>
+      )}
 
       {/* 4x6 Packing Label */}
       {selectedOrderForLabel && (

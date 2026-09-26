@@ -1,159 +1,67 @@
-# Turborepo starter
+# POSflow Commerce
 
-This Turborepo starter is maintained by the Turborepo core team.
+Multi-tenant eCommerce SaaS for Pakistan/MENA D2C brands: one API powering each merchant's storefront,
+a merchant admin, and a platform (super) admin.
 
-## Using this example
+| App | Path | Port | What it is |
+| :--- | :--- | :--- | :--- |
+| API | `apps/api` | 4000 | NestJS + Fastify, Drizzle ORM, PostgreSQL |
+| Storefront | `apps/web` | 3000 | Next.js — catalog, cart, COD checkout |
+| Merchant admin | `apps/merchant-admin` | 3001 | Orders, products, stock, customers, discounts, analytics, settings |
+| Platform admin | `apps/platform-admin` | 3002 | Tenants, merchant logins, platform metrics |
+| DB package | `packages/db` | — | Drizzle schema, SQL migrations, CLI scripts |
 
-Run the following command:
+Architecture, invariants and design decisions: [SYSTEM_ARCHITECTURE_CONTEXT.md](SYSTEM_ARCHITECTURE_CONTEXT.md).
 
-```sh
-npx create-turbo@latest
+## First-time setup
+
+Requires Node 24+ and pnpm 9.
+
+```bash
+pnpm install
 ```
 
-## What's inside?
+Create `apps/api/.env` and `packages/db/.env` from [apps/api/.env.example](apps/api/.env.example) (at minimum `DATABASE_URL`), then:
 
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `@next/eslint-plugin-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```bash
+pnpm db:migrate                                                          # create/upgrade the schema
+pnpm db:seed                                                             # demo store (development only)
+pnpm db:create-user --role platform_admin --email you@example.com        # prompts for a password
+pnpm db:create-user --role merchant --email owner@brand.pk --tenant ten_pilot_01
+pnpm dev                                                                 # all apps
 ```
 
-Without global `turbo`, use your package manager:
+## Database commands
 
-```sh
-cd my-turborepo
-npx turbo build
-npm exec turbo build
-npm exec turbo build
+| Command | Does |
+| :--- | :--- |
+| `pnpm db:migrate` | Apply pending files in `packages/db/migrations` (each in a transaction). `db:push` is an alias. |
+| `pnpm db:status` | List applied / pending migrations. |
+| `pnpm db:check` | Fail if the database and the Drizzle schema disagree, or a migration is pending. Run before deploying. |
+| `pnpm db:seed` | Load the demo tenant/store. Refuses to run with `NODE_ENV=production`. |
+| `pnpm db:create-user` / `db:reset-password` | Manage logins (hidden password prompt). |
+| `pnpm db:reset --confirm` | **Drops every table.** Development only. |
+
+**Changing the schema:** edit `packages/db/src/index.ts` (what the code expects) *and* add a new numbered SQL
+file in `packages/db/migrations` (what the database gets). Never edit a migration that has been applied —
+`db:migrate` refuses if a checksum changed. `db:check` catches the two drifting apart.
+
+## Tests
+
+```bash
+pnpm --filter api test                                  # unit tests, no database (seconds)
+E2E_ALLOW_WRITES=true pnpm --filter api test:e2e        # end-to-end, needs a database (minutes)
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+The end-to-end suite builds the API, runs it on a spare port and checks auth, tenant isolation,
+race-safe checkout (stock, order numbers, coupon limits, customers), order tokens and admin features.
+It **writes to `DATABASE_URL`** — point it at a Neon branch or test database — and removes everything it creates.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Production notes
 
-```sh
-turbo build --filter=docs
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo build --filter=docs
-npm exec turbo build --filter=docs
-npm exec turbo build --filter=docs
-```
-
-### Develop
-
-To develop all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo dev
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo dev
-npm exec turbo dev
-npm exec turbo dev
-```
-
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-npm exec turbo dev --filter=web
-npm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-npm exec turbo login
-npm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-npm exec turbo link
-npm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- Set `NODE_ENV=production` (secure cookies, no demo seed, rate limits always on).
+- Admin apps call the API through their own `/api/*` rewrite (`API_URL`), so session cookies stay first-party.
+- Set `TRUST_PROXY` to the number of proxies in front of the API so rate limits see real client IPs.
+- Health checks: `GET /health` (process up) and `GET /health/ready` (database reachable, 503 if not).
+- Logs are JSON on stdout; every response carries an `x-request-id` that also appears in error logs.
+- Rate limits and login lockouts are in-memory: fine for one API instance, move to Redis before running several.

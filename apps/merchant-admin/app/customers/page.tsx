@@ -1,7 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getCustomers, getCustomerById, formatPrice, formatWhatsAppUrl, errorMessage, type MerchantCustomer } from '@/lib/api';
+import {
+  getCustomers,
+  getCustomerById,
+  formatPrice,
+  formatWhatsAppUrl,
+  errorMessage,
+  type CustomerPage,
+  type MerchantCustomer,
+} from '@/lib/api';
+import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/error-banner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,27 +19,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 export default function MerchantCustomersPage() {
   const [customers, setCustomers] = useState<MerchantCustomer[]>([]);
-  const [filtered, setFiltered] = useState<MerchantCustomer[]>([]);
+  const [stats, setStats] = useState<CustomerPage['stats'] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<MerchantCustomer | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      try {
-        const list = await getCustomers();
-        setCustomers(list);
-        setFiltered(list);
-      } catch (err) {
-        setError(errorMessage(err));
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
 
   // Prefill from ?search= (e.g. the "View Profile" link on an order).
   useEffect(() => {
@@ -39,22 +35,46 @@ export default function MerchantCustomersPage() {
   }, []);
 
   useEffect(() => {
-    if (!search.trim()) {
-      setFiltered(customers);
-      return;
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Search runs on the server (name, email, or phone digits), one page at a time.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const page = await getCustomers({ q: debouncedSearch });
+        if (cancelled) return;
+        setCustomers(page.customers);
+        setNextCursor(page.nextCursor);
+        setStats(page.stats);
+      } catch (err) {
+        if (!cancelled) setError(errorMessage(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    const q = search.toLowerCase();
-    // Phones are stored normalized (+923001234567) but typed/displayed with spaces and dashes.
-    const qDigits = q.replace(/\D/g, '');
-    setFiltered(
-      customers.filter(
-        (c) =>
-          `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().includes(q) ||
-          (qDigits.length > 0 && c.phone.replace(/\D/g, '').includes(qDigits)) ||
-          (c.email && c.email.toLowerCase().includes(q))
-      )
-    );
-  }, [search, customers]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedSearch]);
+
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await getCustomers({ q: debouncedSearch, cursor: nextCursor });
+      setCustomers((prev) => [...prev, ...page.customers]);
+      setNextCursor(page.nextCursor);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const handleSelectCustomer = async (cust: MerchantCustomer) => {
     setSelectedCustomer(cust);
@@ -65,10 +85,10 @@ export default function MerchantCustomersPage() {
     }
   };
 
-  // Metrics
-  const totalLTV = customers.reduce((acc, c) => acc + c.totalSpentMinor, 0);
-  const avgLTV = customers.length > 0 ? Math.round(totalLTV / customers.length) : 0;
-  const repeatCount = customers.filter((c) => c.ordersCount > 1).length;
+  // Store-wide metrics come from the API, not from the loaded page.
+  const totalCustomers = stats?.total ?? 0;
+  const repeatCount = stats?.repeat ?? 0;
+  const avgLTV = stats?.avgLifetimeValueMinor ?? 0;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -99,8 +119,8 @@ export default function MerchantCustomersPage() {
             <CardTitle className="text-xs font-normal text-muted-foreground">Total Customers</CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            <div className="text-lg font-medium text-foreground">{customers.length}</div>
-            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Identified in Pakistan catalog</p>
+            <div className="text-lg font-medium text-foreground">{totalCustomers}</div>
+            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Unique phone numbers that ordered</p>
           </CardContent>
         </Card>
 
@@ -111,7 +131,7 @@ export default function MerchantCustomersPage() {
           <CardContent className="p-4 pt-0">
             <div className="text-lg font-medium text-foreground">{repeatCount}</div>
             <p className="text-[11px] text-emerald-500 font-normal mt-0.5">
-              {customers.length > 0 ? Math.round((repeatCount / customers.length) * 100) : 0}% Repeat Customer Rate
+              {totalCustomers > 0 ? Math.round((repeatCount / totalCustomers) * 100) : 0}% Repeat Customer Rate
             </p>
           </CardContent>
         </Card>
@@ -148,14 +168,14 @@ export default function MerchantCustomersPage() {
                   Loading customer directory...
                 </TableCell>
               </TableRow>
-            ) : filtered.length === 0 ? (
+            ) : customers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-xs text-muted-foreground">
                   No customers found matching "{search}".
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((cust) => {
+              customers.map((cust) => {
                 const fullName = `${cust.firstName || ''} ${cust.lastName || ''}`.trim() || 'Guest Customer';
                 const city = cust.defaultAddress?.city || 'Pakistan';
                 return (
@@ -223,6 +243,14 @@ export default function MerchantCustomersPage() {
           </TableBody>
         </Table>
       </div>
+
+      {nextCursor && !loading && (
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" onClick={loadMore} disabled={loadingMore} className="text-xs font-normal">
+            {loadingMore ? 'Loading...' : 'Load more customers'}
+          </Button>
+        </div>
+      )}
 
       {/* Customer 360 Detail Modal */}
       {selectedCustomer && (

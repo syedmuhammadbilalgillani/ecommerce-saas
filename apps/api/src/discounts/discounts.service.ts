@@ -1,9 +1,9 @@
 import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
 import { resolveTenantId, type DbExecutor } from '../db/store-context';
+import { computeDiscount } from './discount-math';
 import { type Database, discounts, eq, and, or, lt, lte, gt, ne, isNull, sql } from '@repo/db';
 
-type DiscountRow = typeof discounts.$inferSelect;
 
 export interface ValidateDiscountResult {
   valid: boolean;
@@ -90,7 +90,7 @@ export class DiscountsService {
     }
 
     // 4. Calculate discount amount in minor units
-    const { discountAmountMinor, freeShipping } = this.computeAmount(discount, subtotalMinor);
+    const { discountAmountMinor, freeShipping } = computeDiscount(discount, subtotalMinor);
 
     return {
       valid: true,
@@ -220,16 +220,6 @@ export class DiscountsService {
       throw new ConflictException(`Promo code "${code}" is no longer available.`);
     }
 
-    return { code: redeemed.code, ...this.computeAmount(redeemed, subtotalMinor) };
-  }
-
-  private computeAmount(discount: DiscountRow, subtotalMinor: number) {
-    if (discount.discountType === 'percentage') {
-      return { discountAmountMinor: Math.round((subtotalMinor * discount.value) / 100), freeShipping: false };
-    }
-    if (discount.discountType === 'fixed_amount') {
-      return { discountAmountMinor: Math.min(discount.value, subtotalMinor), freeShipping: false };
-    }
-    return { discountAmountMinor: 0, freeShipping: discount.discountType === 'free_shipping' };
+    return { code: redeemed.code, ...computeDiscount(redeemed, subtotalMinor) };
   }
 }

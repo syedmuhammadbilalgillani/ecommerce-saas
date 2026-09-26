@@ -214,9 +214,52 @@ function mapRawOrder(o: any): MerchantOrder {
 // ----------------------------------------------------
 // Orders API
 // ----------------------------------------------------
-export async function getOrders(init?: RequestInit): Promise<MerchantOrder[]> {
-  const list = await request<any[]>('/v1/merchant/orders', init);
-  return list.map(mapRawOrder);
+export type OrderTab = 'all' | 'unverified' | 'pending_dispatch' | 'in_transit' | 'delivered' | 'cancelled';
+export type OrderTabCounts = Record<OrderTab, number>;
+
+export interface OrderPage {
+  orders: MerchantOrder[];
+  nextCursor: string | null;
+  counts: OrderTabCounts;
+}
+
+function queryString(params: Record<string, string | number | undefined | null>): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+  const s = qs.toString();
+  return s ? `?${s}` : '';
+}
+
+/** Raw fetch that keeps the page envelope (data + nextCursor + extras) instead of unwrapping `data`. */
+async function requestPage<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      cache: 'no-store',
+      credentials: 'include',
+      ...init,
+    });
+  } catch {
+    throw new Error('Cannot reach the API server. Check that it is running.');
+  }
+  const json = await res.json().catch(() => null);
+  if (res.status === 401) {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') window.location.assign('/login');
+    throw new AuthError(json?.message || 'Please sign in');
+  }
+  if (!res.ok) throw new Error(json?.message || `Request failed (${res.status})`);
+  return json as T;
+}
+
+export async function getOrders(
+  params: { tab?: OrderTab; q?: string; cursor?: string | null; limit?: number } = {},
+  init?: RequestInit
+): Promise<OrderPage> {
+  const page = await requestPage<{ data: any[]; nextCursor: string | null; counts: OrderTabCounts }>(
+    `/v1/merchant/orders${queryString({ tab: params.tab, q: params.q, cursor: params.cursor, limit: params.limit })}`,
+    init
+  );
+  return { orders: page.data.map(mapRawOrder), nextCursor: page.nextCursor, counts: page.counts };
 }
 
 export async function getOrderById(orderId: string): Promise<MerchantOrder> {
@@ -344,8 +387,17 @@ export interface MerchantCustomer {
   orders?: MerchantOrder[];
 }
 
-export async function getCustomers(): Promise<MerchantCustomer[]> {
-  return request<MerchantCustomer[]>('/v1/merchant/customers');
+export interface CustomerPage {
+  customers: MerchantCustomer[];
+  nextCursor: string | null;
+  stats: { total: number; repeat: number; avgLifetimeValueMinor: number };
+}
+
+export async function getCustomers(params: { q?: string; cursor?: string | null; limit?: number } = {}): Promise<CustomerPage> {
+  const page = await requestPage<{ data: MerchantCustomer[]; nextCursor: string | null; stats: CustomerPage['stats'] }>(
+    `/v1/merchant/customers${queryString({ q: params.q, cursor: params.cursor, limit: params.limit })}`
+  );
+  return { customers: page.data, nextCursor: page.nextCursor, stats: page.stats };
 }
 
 export async function getCustomerById(id: string): Promise<MerchantCustomer> {

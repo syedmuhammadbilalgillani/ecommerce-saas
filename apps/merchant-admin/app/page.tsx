@@ -12,14 +12,13 @@ export default async function MerchantDashboardPage() {
   const auth = await serverAuthHeaders();
   let analytics, orders;
   try {
-    [analytics, orders] = await Promise.all([getAnalytics(auth), getOrders(auth)]);
+    [analytics, orders] = await Promise.all([getAnalytics(auth), getOrders({ limit: 5 }, auth)]);
   } catch (err) {
     if (err instanceof AuthError) redirect('/login');
     throw err;
   }
 
-  const orderList = orders;
-  const recentOrders = orderList.slice(0, 5);
+  const recentOrders = orders.orders;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -104,7 +103,7 @@ export default async function MerchantDashboardPage() {
             <p className="text-xs text-muted-foreground font-normal">Latest shipments awaiting courier pickup or dispatch.</p>
           </div>
           <Link href="/orders" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            View all ({orderList.length}) →
+            View all ({orders.counts.all}) →
           </Link>
         </div>
 

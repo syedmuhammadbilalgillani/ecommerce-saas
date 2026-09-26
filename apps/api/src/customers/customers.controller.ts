@@ -1,4 +1,5 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { parseLimit } from '../common/pagination';
 import { CustomersService } from './customers.service';
 import { CurrentMerchant, MerchantGuard, type MerchantContext } from '../auth/guards';
 
@@ -8,12 +9,14 @@ export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
   @Get()
-  async getCustomers(@CurrentMerchant() merchant: MerchantContext) {
-    const list = await this.customersService.getCustomers(merchant.storeId);
-    return {
-      success: true,
-      data: list,
-    };
+  async getCustomers(
+    @CurrentMerchant() merchant: MerchantContext,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+    @Query('q') q?: string
+  ) {
+    const page = await this.customersService.getCustomers(merchant.storeId, { limit: parseLimit(limit), cursor, q });
+    return { success: true, ...page };
   }
 
   @Get(':id')

@@ -6,7 +6,10 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main",
-    "start:prod": "node dist/main"
+    "start:prod": "node dist/main",
+    "test": "node --test test/unit.test.ts",
+    "test:e2e": "nest build && node --test --test-concurrency=1 test/e2e.test.ts",
+    "check-types": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@nestjs/common": "^11.0.11",
@@ -23,6 +26,7 @@
     "@nestjs/schematics": "^11.0.2",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.13.9",
+    "postgres": "^3.4.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   }

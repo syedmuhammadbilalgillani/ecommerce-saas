@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { OrdersService, type CheckoutDto } from './orders.service';
 import { StorefrontStore, StorefrontStoreGuard } from '../auth/guards';
+import { RateLimit } from '../common/rate-limit';
 
 @Controller('v1/storefront/orders')
 @UseGuards(StorefrontStoreGuard)
@@ -18,6 +19,7 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post('checkout')
+  @RateLimit(10, 60)
   async checkout(
     @StorefrontStore() storeId: string,
     @Body() body: CheckoutDto,
@@ -36,6 +38,7 @@ export class OrdersController {
   }
 
   @Get(':id')
+  @RateLimit(30, 60)
   async getOrder(
     @StorefrontStore() storeId: string,
     @Param('id') id: string,
@@ -50,6 +53,7 @@ export class OrdersController {
   }
 
   @Post(':id/verify-whatsapp')
+  @RateLimit(10, 60)
   async verifyWhatsApp(
     @StorefrontStore() storeId: string,
     @Param('id') id: string,

@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { PlatformGuard } from '../auth/guards';
+import { RateLimit } from '../common/rate-limit';
 import { PlatformService } from './platform.service';
 
 @Controller('v1/platform')
@@ -49,6 +50,7 @@ export class PlatformController {
   }
 
   @Post('users/:id/password')
+  @RateLimit(10, 60)
   @HttpCode(HttpStatus.OK)
   async resetMerchantPassword(@Param('id') id: string, @Body() body: { newPassword: string }) {
     await this.platformService.resetMerchantPassword(id, body?.newPassword);

@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { DRIZZLE } from '../db/db.module';
 import { hashSecret, newSecret } from '../auth/session-token';
 import type { DbExecutor } from '../db/store-context';
+import { decodeCursor, encodeCursor, likePattern } from '../common/pagination';
 import {
   type Database,
   orders,
@@ -14,11 +15,16 @@ import {
   stores,
   eq,
   and,
+  or,
+  lt,
+  ne,
   asc,
   desc,
+  ilike,
   inArray,
   isNull,
   sql,
+  type SQL,
 } from '@repo/db';
 import { DiscountsService } from '../discounts/discounts.service';
 import { CustomersService } from '../customers/customers.service';
@@ -91,6 +97,31 @@ const ALLOWED_STATUS_VALUES: Record<keyof OrderStatusUpdate, readonly string[]> 
   fulfillmentStatus: ['unfulfilled', 'pending', 'in_transit', 'delivered', 'fulfilled', 'returned', 'cancelled'],
   orderStatus: ['open', 'closed', 'cancelled'],
 };
+
+/** Merchant order-list tabs; each maps to one SQL condition so tabs and counts always agree. */
+export const ORDER_TABS = ['all', 'unverified', 'pending_dispatch', 'in_transit', 'delivered', 'cancelled'] as const;
+export type OrderTab = (typeof ORDER_TABS)[number];
+
+const notCancelled = ne(orders.orderStatus, 'cancelled');
+const TAB_CONDITION: Record<OrderTab, SQL | undefined> = {
+  all: undefined,
+  unverified: and(
+    eq(orders.paymentMethod, 'cod'),
+    notCancelled,
+    or(isNull(orders.notes), sql`${orders.notes} NOT ILIKE '%WhatsApp Verified%'`)
+  ),
+  pending_dispatch: and(isNull(orders.courierTrackingNumber), notCancelled),
+  in_transit: and(eq(orders.fulfillmentStatus, 'in_transit'), notCancelled),
+  delivered: and(inArray(orders.fulfillmentStatus, ['delivered', 'fulfilled']), notCancelled),
+  cancelled: eq(orders.orderStatus, 'cancelled'),
+};
+
+export interface OrderListQuery {
+  limit: number;
+  cursor?: string;
+  tab?: string;
+  q?: string;
+}
 
 export interface OutOfStockLine {
   variantId: string;
@@ -315,13 +346,63 @@ export class OrdersService {
     return this.formatOrder(order);
   }
 
-  async listAdminOrders(storeId: string): Promise<FormattedOrder[]> {
-    const records = await this.db.query.orders.findMany({
-      where: eq(orders.storeId, storeId),
-      with: { items: true },
-      orderBy: [desc(orders.createdAt)],
-    });
-    return records.map((order) => this.formatOrder(order));
+  /**
+   * One page of the store's orders (newest first) for a tab and optional search, plus the count
+   * for every tab so the UI badges are exact regardless of how many pages are loaded.
+   */
+  async listAdminOrders(storeId: string, query: OrderListQuery) {
+    const tab = (query.tab || 'all') as OrderTab;
+    if (!ORDER_TABS.includes(tab)) {
+      throw new BadRequestException(`tab must be one of: ${ORDER_TABS.join(', ')}`);
+    }
+
+    const search = query.q?.trim();
+    const searchCondition = search
+      ? or(
+          ilike(orders.customerName, likePattern(search)),
+          ilike(orders.customerPhone, likePattern(search)),
+          ilike(orders.orderNumber, likePattern(search)),
+          ilike(orders.courierTrackingNumber, likePattern(search))
+        )
+      : undefined;
+
+    const cursor = decodeCursor(query.cursor);
+    const cursorCondition = cursor
+      ? or(
+          lt(orders.createdAt, new Date(String(cursor.sortValue))),
+          and(eq(orders.createdAt, new Date(String(cursor.sortValue))), lt(orders.id, cursor.id))
+        )
+      : undefined;
+
+    const base = and(eq(orders.storeId, storeId), searchCondition);
+
+    const [rows, [counts]] = await Promise.all([
+      this.db.query.orders.findMany({
+        where: and(base, TAB_CONDITION[tab], cursorCondition),
+        with: { items: true },
+        orderBy: [desc(orders.createdAt), desc(orders.id)],
+        limit: query.limit + 1,
+      }),
+      this.db
+        .select({
+          all: sql<number>`count(*)::int`,
+          unverified: sql<number>`count(*) FILTER (WHERE ${TAB_CONDITION.unverified})::int`,
+          pending_dispatch: sql<number>`count(*) FILTER (WHERE ${TAB_CONDITION.pending_dispatch})::int`,
+          in_transit: sql<number>`count(*) FILTER (WHERE ${TAB_CONDITION.in_transit})::int`,
+          delivered: sql<number>`count(*) FILTER (WHERE ${TAB_CONDITION.delivered})::int`,
+          cancelled: sql<number>`count(*) FILTER (WHERE ${TAB_CONDITION.cancelled})::int`,
+        })
+        .from(orders)
+        .where(base),
+    ]);
+
+    const page = rows.slice(0, query.limit);
+    const last = page[page.length - 1];
+    return {
+      data: page.map((order) => this.formatOrder(order)),
+      nextCursor: rows.length > query.limit && last ? encodeCursor(last.createdAt.toISOString(), last.id) : null,
+      counts,
+    };
   }
 
   async updateOrderStatus(storeId: string, orderId: string, update: OrderStatusUpdate): Promise<FormattedOrder> {

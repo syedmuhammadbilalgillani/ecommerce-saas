@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { CartService } from './cart.service';
 import { StorefrontStore, StorefrontStoreGuard } from '../auth/guards';
+import { RateLimit } from '../common/rate-limit';
 
 const MAX_LINE_QUANTITY = 999;
 
@@ -45,6 +46,7 @@ export class CartController {
   }
 
   @Post('items')
+  @RateLimit(60, 60)
   async addItem(
     @StorefrontStore() storeId: string,
     @Body() body: { variantId: string; quantity?: number },

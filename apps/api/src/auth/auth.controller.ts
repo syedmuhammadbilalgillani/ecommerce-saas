@@ -3,6 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService, type SessionUser } from './auth.service';
 import { CurrentMerchant, CurrentPlatformUser, MerchantGuard, PlatformGuard, type MerchantContext } from './guards';
 import { clearSessionCookie, readSessionToken, setSessionCookie } from './session-token';
+import { RateLimit } from '../common/rate-limit';
 
 interface LoginBody {
   email: string;
@@ -19,6 +20,7 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('merchant/login')
+  @RateLimit(10, 60)
   @HttpCode(HttpStatus.OK)
   async merchantLogin(@Body() body: LoginBody, @Res({ passthrough: true }) reply: FastifyReply) {
     const { token, user } = await this.auth.login(body?.email, body?.password, 'merchant');
@@ -41,6 +43,7 @@ export class AuthController {
   }
 
   @Post('merchant/password')
+  @RateLimit(5, 60)
   @HttpCode(HttpStatus.OK)
   @UseGuards(MerchantGuard)
   async merchantChangePassword(
@@ -53,6 +56,7 @@ export class AuthController {
   }
 
   @Post('platform/login')
+  @RateLimit(10, 60)
   @HttpCode(HttpStatus.OK)
   async platformLogin(@Body() body: LoginBody, @Res({ passthrough: true }) reply: FastifyReply) {
     const { token, user } = await this.auth.login(body?.email, body?.password, 'platform_admin');
@@ -75,6 +79,7 @@ export class AuthController {
   }
 
   @Post('platform/password')
+  @RateLimit(5, 60)
   @HttpCode(HttpStatus.OK)
   @UseGuards(PlatformGuard)
   async platformChangePassword(

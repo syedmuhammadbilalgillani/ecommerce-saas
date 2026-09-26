@@ -7,6 +7,7 @@ import {
   StorefrontStoreGuard,
   type MerchantContext,
 } from '../auth/guards';
+import { RateLimit } from '../common/rate-limit';
 
 @Controller('v1')
 export class DiscountsController {
@@ -16,6 +17,7 @@ export class DiscountsController {
    * Storefront: Validate discount code in cart/checkout
    */
   @Post('storefront/discounts/validate')
+  @RateLimit(20, 60) // stops coupon-code guessing
   @HttpCode(HttpStatus.OK)
   @UseGuards(StorefrontStoreGuard)
   async validateDiscount(

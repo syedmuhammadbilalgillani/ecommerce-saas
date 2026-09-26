@@ -2,21 +2,13 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE } from '../db/db.module';
 import type { DbExecutor } from '../db/store-context';
-import { type Database, customers, orders, eq, and, sql } from '@repo/db';
+import { type Database, customers, orders, eq, and, or, lt, desc, ilike, sql } from '@repo/db';
+import { decodeCursor, encodeCursor, likePattern } from '../common/pagination';
+import { normalizePhone } from './phone';
 
 const VIP_THRESHOLD_MINOR = 1_000_000; // Rs 10,000 lifetime spend
 
-/**
- * One canonical form per phone so the same shopper isn't split into several customers:
- * Pakistani mobiles (03xx…, 923xx…, +923xx…) become +923xxxxxxxxx; anything else keeps +digits.
- */
-export function normalizePhone(phone: string): string {
-  const cleaned = phone.replace(/[^\d+]/g, '');
-  const digits = cleaned.replace(/\D/g, '');
-  if (/^03\d{9}$/.test(digits)) return `+92${digits.slice(1)}`;
-  if (/^923\d{9}$/.test(digits)) return `+${digits}`;
-  return cleaned.startsWith('+') ? `+${digits}` : digits;
-}
+export { normalizePhone } from './phone';
 
 export interface CustomerSyncDto {
   name: string;
@@ -38,18 +30,59 @@ export class CustomersService {
     return `${prefix}_${randomBytes(12).toString('hex')}`;
   }
 
-  async getCustomers(storeId: string) {
-    const list = await this.db
-      .select()
-      .from(customers)
-      .where(eq(customers.storeId, storeId))
-      .orderBy(sql`${customers.totalSpentMinor} DESC`);
+  /** One page of customers (highest lifetime spend first) plus store-wide CRM stats. */
+  async getCustomers(storeId: string, query: { limit: number; cursor?: string; q?: string }) {
+    const search = query.q?.trim();
+    // Drop a leading trunk "0" so local input (0300…) matches stored international numbers (+92300…).
+    const digits = search?.replace(/\D/g, '').replace(/^0+/, '');
+    const searchCondition = search
+      ? or(
+          ilike(sql`${customers.firstName} || ' ' || coalesce(${customers.lastName}, '')`, likePattern(search)),
+          ilike(customers.email, likePattern(search)),
+          // Phones are stored normalized (+923…); match on digits so "0300 123" style input works.
+          digits ? ilike(sql`regexp_replace(${customers.phone}, '[^0-9]', '', 'g')`, likePattern(digits)) : undefined
+        )
+      : undefined;
 
-    return list.map((c) => ({
-      ...c,
-      avgOrderValueMinor:
-        c.ordersCount > 0 ? Math.round(c.totalSpentMinor / c.ordersCount) : 0,
-    }));
+    const cursor = decodeCursor(query.cursor);
+    const cursorCondition = cursor
+      ? or(
+          lt(customers.totalSpentMinor, Number(cursor.sortValue)),
+          and(eq(customers.totalSpentMinor, Number(cursor.sortValue)), lt(customers.id, cursor.id))
+        )
+      : undefined;
+
+    const [rows, [stats]] = await Promise.all([
+      this.db
+        .select()
+        .from(customers)
+        .where(and(eq(customers.storeId, storeId), searchCondition, cursorCondition))
+        .orderBy(desc(customers.totalSpentMinor), desc(customers.id))
+        .limit(query.limit + 1),
+      this.db
+        .select({
+          total: sql<number>`count(*)::int`,
+          repeat: sql<number>`count(*) FILTER (WHERE ${customers.ordersCount} > 1)::int`,
+          totalSpentMinor: sql<number>`coalesce(sum(${customers.totalSpentMinor}), 0)::bigint`,
+        })
+        .from(customers)
+        .where(eq(customers.storeId, storeId)),
+    ]);
+
+    const page = rows.slice(0, query.limit);
+    const last = page[page.length - 1];
+    return {
+      data: page.map((c) => ({
+        ...c,
+        avgOrderValueMinor: c.ordersCount > 0 ? Math.round(c.totalSpentMinor / c.ordersCount) : 0,
+      })),
+      nextCursor: rows.length > query.limit && last ? encodeCursor(last.totalSpentMinor, last.id) : null,
+      stats: {
+        total: stats.total,
+        repeat: stats.repeat,
+        avgLifetimeValueMinor: stats.total > 0 ? Math.round(Number(stats.totalSpentMinor) / stats.total) : 0,
+      },
+    };
   }
 
   async getCustomerById(storeId: string, id: string) {
@@ -70,7 +103,8 @@ export class CustomersService {
       .select()
       .from(orders)
       .where(and(eq(orders.storeId, storeId), eq(orders.customerPhone, customer.phone)))
-      .orderBy(sql`${orders.createdAt} DESC`);
+      .orderBy(sql`${orders.createdAt} DESC`)
+      .limit(100);
 
     return {
       ...customer,

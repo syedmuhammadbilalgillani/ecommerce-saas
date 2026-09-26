@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { parseLimit } from '../common/pagination';
 import { OrdersService, type OrderStatusUpdate } from './orders.service';
 import { CurrentMerchant, MerchantGuard, type MerchantContext } from '../auth/guards';
 
@@ -8,13 +9,20 @@ export class AdminOrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get('orders')
-  async listOrders(@CurrentMerchant() merchant: MerchantContext) {
-    const orders = await this.ordersService.listAdminOrders(merchant.storeId);
-    return {
-      success: true,
-      count: orders.length,
-      data: orders,
-    };
+  async listOrders(
+    @CurrentMerchant() merchant: MerchantContext,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+    @Query('tab') tab?: string,
+    @Query('q') q?: string
+  ) {
+    const page = await this.ordersService.listAdminOrders(merchant.storeId, {
+      limit: parseLimit(limit),
+      cursor,
+      tab,
+      q,
+    });
+    return { success: true, ...page };
   }
 
   @Patch('orders/:id/status')

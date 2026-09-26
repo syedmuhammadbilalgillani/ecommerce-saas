@@ -183,6 +183,14 @@ Checkout is a single transaction that takes row locks in a fixed order — **car
 * **Customers:** one `INSERT … ON CONFLICT (store_id, phone) DO UPDATE` per order; Pakistani mobiles are normalized to `+923xxxxxxxxx`.
 * **Status changes:** the order row is locked; cancel restocks once; re-opening a cancelled order re-checks stock (`409` if gone). Courier booking is conditional on no existing CN.
 
+## Operational Safety (Hardening Step 3)
+
+* **Schema changes:** numbered SQL files in `packages/db/migrations`, applied by `pnpm db:migrate` (one transaction per file, recorded with a checksum in `schema_migrations`, advisory-locked). `pnpm db:check` fails if the database and the Drizzle schema in `index.ts` disagree. Demo data lives only in `pnpm db:seed`, which refuses to run in production. `drizzle-kit` is used for Studio only.
+* **Rate limiting:** global per-IP limit (`RATE_LIMIT_PER_MINUTE`, default 300/min) plus tighter per-route limits (checkout 10/min, coupon check 20/min, login 10/min, password change 5/min). In-memory: move to Redis before running several API instances. `TRUST_PROXY` = number of proxies in front of the API.
+* **Observability:** JSON request logs (pino) with cookies/tokens redacted; every response has `x-request-id`; unexpected errors are logged with that id and returned as a generic 500 carrying it. `GET /health` (liveness) and `GET /health/ready` (database, 503 when down).
+* **Scale:** merchant orders and customers are keyset-paginated (`?limit=&cursor=`) with server-side tabs/search and exact tab counts; analytics are Postgres aggregates grouped by the store's timezone.
+* **Tests:** `pnpm --filter api test` (unit, no DB) and `E2E_ALLOW_WRITES=true pnpm --filter api test:e2e` (boots the API, 14 end-to-end checks incl. concurrency; cleans up after itself).
+
 ## 5. API Surface (Storefront v1)
 
 | Method | Endpoint | Description | Performance Target |
@@ -230,7 +238,7 @@ Checkout is a single transaction that takes row locks in a fixed order — **car
 - [x] Created One-Page Checkout UI (`/checkout`) optimized for Pakistan/MENA (Phone/WhatsApp first, City selector, COD default).
 - [x] Created Order Confirmation & Receipt Screen (`/order-confirmation/[id]`) with live tracking and COD instructions.
 - [x] Updated Slide-over Cart Drawer to route seamlessly into checkout flow.
-- [x] Automated table migration in `packages/db/src/init-db.ts` for Neon PostgreSQL.
+- [x] Automated table migration for Neon PostgreSQL (now `packages/db/migrations`, see Operational Safety).
 
 ### Phase 5: Courier Integration & Merchant Admin (COMPLETED)
 - [x] Configured shadcn/ui design system with Tailwind CSS and official `components.json`.
