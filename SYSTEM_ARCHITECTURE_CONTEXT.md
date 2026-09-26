@@ -4,7 +4,7 @@
 > **Target Audience:** Mid-market D2C brands (50–500 orders/day) and scaling merchants in Pakistan & MENA.
 > **Engineering Motto:** *"One unified, lightning-fast commerce engine powering infinitely custom storefronts."*
 
-**Last updated:** 2026-09-27 · **Branch:** `main` @ `cfeb602` (Hardening Step 3 complete) · **Status:** feature-complete for a pilot merchant; not yet deployed (see §10).
+**Last updated:** 2026-09-27 · **Status:** feature-complete for a pilot merchant + multi-tenant fleet management (Hardening Step 4 complete); not yet deployed (see §10).
 
 ---
 
@@ -57,18 +57,24 @@ ecommerce-saas/
 │   ├── web/                    # Storefront (Port 3000) — catalog, PDP, cart drawer, 1-page COD checkout,
 │   │                           #   order confirmation (token-protected), store name/WhatsApp from API
 │   ├── merchant-admin/         # Merchant Admin (Port 3001)
-│   │   ├── app/                # login, dashboard, orders (+ detail), products, collections, customers,
-│   │   │                       #   discounts, analytics, settings, error.tsx
-│   │   ├── components/         # app-shell (sidebar/sign-out), product-editor, packing-label, error-banner, ui/
-│   │   ├── lib/                # api.ts (client), server-auth.ts, order-checks.ts, slug.ts
+│   │   ├── app/                # login, impersonate, dashboard, orders (+ detail), products, collections, customers,
+│   │   │                       #   discounts, analytics, settings, storefront-ai (AI Prompt Studio), error.tsx
+│   │   ├── components/         # app-shell (sidebar, store switcher, support mode banner, sign-out), product-editor, packing-label, error-banner, ui/
+│   │   ├── lib/                # api.ts (client + multi-store scoping), server-auth.ts, order-checks.ts, slug.ts
 │   │   ├── proxy.ts            # redirects to /login when there is no session cookie
 │   │   └── next.config.mjs     # /api/* rewrite -> API_URL (same-origin cookies)
-│   ├── platform-admin/         # Platform (Super) Admin (Port 3002) — login, metrics, tenants, account
-│   │   └── (same pattern: app-shell, proxy.ts, /api rewrite, reset-password-dialog)
+│   ├── platform-admin/         # Platform (Super) Admin (Port 3002)
+│   │   ├── app/                # login, metrics (dashboard + real ARR + p95 latency), tenants list & provision (with tier),
+│   │   │                       #   tenants/[id] (edit tenant/store/slug/plan, stores fleet, staff users, suspend/activate),
+│   │   │                       #   admins (team management & RBAC roles), audit-logs (security trail), account
+│   │   ├── components/         # app-shell, reset-password-dialog, ui/
+│   │   ├── lib/                # api.ts (client), server-auth.ts
+│   │   ├── proxy.ts            # redirects to /login when there is no platform session cookie
+│   │   └── next.config.mjs     # /api/* rewrite -> API_URL (same-origin cookies)
 │   └── api/                    # NestJS + Fastify (Port 4000)
 │       ├── src/
-│       │   ├── auth/           # AuthService, guards (Merchant/Platform/StorefrontStore), session-token
-│       │   ├── common/         # rate-limit guard, all-exceptions filter, pagination helpers
+│       │   ├── auth/           # AuthService, guards (Merchant/Platform/PlatformRole/StorefrontStore), session-token
+│       │   ├── common/         # rate-limit guard, all-exceptions filter, telemetry service (p95), pagination helpers
 │       │   ├── products/       # storefront catalog + merchant products, variants, stock, collections
 │       │   ├── cart/           # storefront cart
 │       │   ├── orders/         # checkout (transactional) + merchant fulfillment
@@ -76,14 +82,14 @@ ecommerce-saas/
 │       │   ├── discounts/      # validate / atomic redeem / on-off, discount-math.ts
 │       │   ├── analytics/      # SQL-aggregate store analytics
 │       │   ├── store/          # store settings (name, WhatsApp)
-│       │   ├── platform/       # tenants, platform metrics, merchant password reset
+│       │   ├── platform/       # tenants, platform metrics (real ARR), admin management, audit-log.service, impersonation
 │       │   └── db/             # Drizzle provider, resolveTenantId, DbExecutor type
 │       ├── test/               # unit.test.ts, e2e.test.ts
 │       └── .env.example
 ├── packages/
 │   ├── db/
 │   │   ├── src/index.ts        # Drizzle schema + relations + client factory (what the code expects)
-│   │   ├── migrations/         # 0001_baseline, 0002_taxonomy_categories, 0003_orders_province_not_null
+│   │   ├── migrations/         # 0001_baseline, 0002_taxonomy_categories, 0003_orders_province_not_null, 0004_plans_audit_logs_roles
 │   │   └── src/                # migrate, check-schema, seed-demo, create-user, reset-password, reset, password
 │   ├── typescript-config/  eslint-config/  ui/
 ├── README.md                   # setup, commands, tests, production notes
@@ -96,8 +102,13 @@ ecommerce-saas/
 
 ## 5. Auth, Tenancy & Security Model
 
-* **Merchant routes (`/v1/merchant/*`)** — `MerchantGuard`: session cookie `posflow_merchant_session` → user (role `merchant`) → tenant (must be `active`). The store is decided **server-side**: `x-store-id` is honored only if that store belongs to the user's tenant (else 403); otherwise the tenant's first store. Services take `storeId` from `@CurrentMerchant()`, never from the request body/query.
-* **Platform routes (`/v1/platform/*`)** — `PlatformGuard`: cookie `posflow_platform_session`, role `platform_admin`.
+* **Merchant routes (`/v1/merchant/*`)** — `MerchantGuard`: session cookie `posflow_merchant_session` → user (role `merchant`) → tenant (must be `active`). The store is decided **server-side**: `x-store-id` is honored only if that store belongs to the user's tenant (else 403); otherwise the tenant's first store. Multi-store tenants switch stores smoothly via the sidebar switcher, setting `posflow_active_store` cookie + localStorage. Services take `storeId` from `@CurrentMerchant()`, never from the request body/query.
+* **Platform routes (`/v1/platform/*`)** — `PlatformGuard`: cookie `posflow_platform_session`, role `platform_admin`. Protected by **`PlatformRoleGuard` (RBAC)**:
+  * `super_admin`: Full control across all tenants, admins, billing plans, and system settings.
+  * `support`: Can view tenants and metrics, impersonate merchants for customer support, and reset merchant passwords; blocked (403) from managing platform admins, suspending tenants, or changing billing tiers.
+  * `viewer`: Read-only access to metrics, tenants, and audit logs; blocked (403) from any mutating operations.
+* **Support Impersonation:** Platform admins generate single-use 60-second exchange tokens (`imp_<hex>`) via `POST /v1/platform/tenants/:id/impersonate`. The merchant admin exchanges this token at same-origin `/v1/auth/exchange-impersonation`, cleanly receiving an authenticated merchant session with an amber "Support Mode" exit banner.
+* **Audit Logging:** Every sensitive platform action (tenant create/suspend/edit, store fleet addition, admin provisioning/status/password reset, merchant staff actions, impersonation) is immutably recorded in `audit_logs`.
 * **Storefront routes (`/v1/storefront/*`)** — `StorefrontStoreGuard`: store from `x-store-id` (else `DEFAULT_STORE_ID`); unknown stores and stores of suspended tenants return 404.
 * **Sessions:** 7 days; DB stores only `sha256(token)`. Password change signs out the user's other sessions; platform reset signs out all of them. Suspending a tenant locks its merchants out on the next request.
 * **Passwords:** scrypt (`packages/db/src/password.ts`), min 10 chars; 5 failed logins per email → 15-minute lockout.
@@ -130,8 +141,8 @@ All tables have `created_at`; mutable ones have `updated_at` (timestamptz). Mone
 
 | Table | Key columns | Notes |
 | :--- | :--- | :--- |
-| `tenants` | `id`, `name`, `default_currency`, `default_locale`, `status` (`active`/`suspended`) | |
-| `stores` | `id`, `tenant_id`→tenants, `name`, `slug` (UNIQUE), `currency`, `timezone`, `whatsapp_phone` (E.164), `next_order_number` | |
+| `tenants` | `id`, `name`, `default_currency`, `default_locale`, `status` (`active`/`suspended`), `plan` (`starter`/`growth`/`enterprise`), `plan_price_minor`, `plan_interval` | Real ARR computed dynamically |
+| `stores` | `id`, `tenant_id`→tenants, `name`, `slug` (UNIQUE), `currency`, `timezone`, `whatsapp_phone` (E.164), `next_order_number` | Fleet of stores per tenant |
 | `categories` | `id`, `name`, `full_name`, `parent_id`→categories, `level` | Global taxonomy, seeded by migration 0002 |
 | `collections` | `id`, `tenant_id`, `store_id`, `title`, `slug`, `collection_type`, `rules`, `is_published` | UNIQUE (`store_id`,`slug`) |
 | `collection_products` | `collection_id`, `product_id`, `position` | |
@@ -143,8 +154,9 @@ All tables have `created_at`; mutable ones have `updated_at` (timestamptz). Mone
 | `customers` | `store_id`, `phone` (normalized), names, `email`, `orders_count`, `total_spent_minor`, `tags`, `default_address` | UNIQUE (`store_id`,`phone`) |
 | `customer_addresses` | `customer_id`, address fields | Not used by the app yet |
 | `discounts` | `store_id`, `code`, `discount_type` (`percentage`/`fixed_amount`/`free_shipping`), `value`, `min_requirement_type`, `min_subtotal_minor`, `usage_limit`, `times_used`, `starts_at`, `ends_at`, `is_active` | UNIQUE (`store_id`, `upper(code)`) |
-| `users` | `email` (UNIQUE, lowercased), `password_hash`, `role`, `tenant_id` (null for platform admins), `status` | |
+| `users` | `email` (UNIQUE, lowercased), `password_hash`, `role`, `platform_role` (`super_admin`/`support`/`viewer`), `tenant_id` (null for platform admins), `status` | Scrypt password hashing |
 | `sessions` | `id` = sha256(token), `user_id`, `expires_at` | |
+| `audit_logs` | `id`, `actor_id`, `actor_email`, `actor_role`, `action`, `target_type`, `target_id`, `metadata`, `created_at` | Tamper-evident admin action trail |
 | `schema_migrations` | `id` (file name), `checksum`, `applied_at` | Managed by `db:migrate` |
 
 Unused columns that exist for future features: `discounts.applies_to`, `entitled_*_ids`, `min_quantity`, `once_per_customer`; `collections.rules` (smart collections); `stores.supported_locales`.
@@ -166,8 +178,9 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 | :--- | :--- | :--- |
 | POST | `/merchant/login`, `/platform/login` | public · 10/min per IP |
 | POST | `/merchant/logout`, `/platform/logout` | public |
-| GET | `/merchant/me` (incl. `storeId`, `storeName`), `/platform/me` | session |
+| GET | `/merchant/me` (incl. `storeId`, `storeName`, `storeSlug`), `/platform/me` | session |
 | POST | `/merchant/password`, `/platform/password` | session · 5/min |
+| POST | `/auth/exchange-impersonation` | public · exchanges short-lived support token for merchant session |
 
 **Storefront** (`/v1/storefront`, `StorefrontStoreGuard`)
 | Method | Endpoint | Notes |
@@ -181,7 +194,7 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 | GET | `/orders/:id` | 30/min; requires `x-order-token` |
 | POST | `/orders/:id/verify-whatsapp` | 10/min; requires `x-order-token` |
 
-**Merchant** (`/v1/merchant`, `MerchantGuard`)
+**Merchant** (`/v1/merchant`, `MerchantGuard` — supports `x-store-id` header for multi-store fleets)
 | Method | Endpoint | Notes |
 | :--- | :--- | :--- |
 | GET/PATCH | `/store` | Store name, WhatsApp number |
@@ -198,14 +211,24 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 | GET | `/customers?limit&cursor&q`, `/customers/:id` | Store-wide `stats`; search by name/email/phone digits |
 | GET | `/analytics` | SQL aggregates, days in store timezone |
 
-**Platform** (`/v1/platform`, `PlatformGuard`)
+**Platform** (`/v1/platform`, `PlatformGuard`, `PlatformRoleGuard`)
 | Method | Endpoint | Notes |
 | :--- | :--- | :--- |
-| GET | `/analytics` | Active tenants/stores, 30-day GMV; ARR & latency `null` (not tracked) |
-| GET/POST | `/tenants` | Create = tenant + store + owner merchant login, in one transaction |
-| PATCH | `/tenants/:id/status` | `active` / `suspended` |
-| GET | `/tenants/:id/users` | |
-| POST | `/users/:id/password` | Reset a merchant's password · 10/min |
+| GET | `/analytics` | Active tenants/stores, 30-day GMV, live p95 API response time, dynamic ARR calculation |
+| GET/POST | `/tenants` | Create = tenant + store + owner merchant login + billing plan (`super_admin`) |
+| GET | `/tenants/:id` | Tenant detail: tenant, store fleet, slug, WhatsApp, 30-day GMV, plan details |
+| PATCH | `/tenants/:id` | Update tenant name, store name, slug, and/or billing plan (`super_admin`) |
+| PATCH | `/tenants/:id/status` | `active` / `suspended` (`super_admin`) |
+| POST | `/tenants/:id/stores` | Provision an additional store in tenant fleet (`super_admin`, `support`) |
+| POST | `/tenants/:id/impersonate` | Issue 5-min single-use support impersonation token (`super_admin`, `support`) |
+| GET/POST | `/tenants/:id/users` | List staff users / create additional merchant login (`super_admin`, `support`) |
+| PATCH | `/tenants/:id/users/:userId/status` | `active` / `disabled`; instantly revokes all user sessions (`super_admin`, `support`) |
+| POST | `/users/:id/password` | Reset a merchant's password & revoke all sessions · 10/min (`super_admin`, `support`) |
+| GET | `/admins` | List platform admins with role (`super_admin`/`support`/`viewer`) (`super_admin`) |
+| POST | `/admins` | Provision new platform admin with role (`super_admin`) |
+| PATCH | `/admins/:id/status` | `active` / `disabled` (`super_admin`) |
+| POST | `/admins/:id/password` | Reset platform admin password & revoke active sessions (`super_admin`) |
+| GET | `/audit-logs?limit&cursor&action` | Keyset-paginated audit trail of sensitive actions (`super_admin`, `support`, `viewer`) |
 
 ---
 
@@ -218,7 +241,7 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 * **Scale:** orders/customers keyset-paginated (default 50, max 200); analytics and tab counts computed by Postgres.
 * **Tests:**
   * `pnpm --filter api test` — unit (phone normalization, discount math, pagination), no DB.
-  * `E2E_ALLOW_WRITES=true pnpm --filter api test:e2e` — builds and boots the API on a spare port, runs 14 end-to-end checks (auth, tenant isolation, 8-buyer last-unit race, coupon race, unique order numbers, customer upsert, double submit, order tokens, restock-once, pagination, analytics, stock adjust, WhatsApp validation, password change), then deletes everything it created. **Writes to `DATABASE_URL`** — use a Neon branch.
+  * `E2E_ALLOW_WRITES=true pnpm --filter api test:e2e` — builds and boots the API on a spare port, runs 20 end-to-end checks (auth, tenant isolation, platform tenant edit & slug collision check, staff lifecycle & session revocation, 8-buyer last-unit race, coupon race, unique order numbers, customer upsert, double submit, order tokens, restock-once, pagination, analytics, stock adjust, WhatsApp validation, password change, multi-store fleet & cross-tenant isolation, billing plans & real ARR recalculation, audit logs recording & action filtering, platform RBAC permissions & role guard enforcement), then deletes everything it created. **Writes to `DATABASE_URL`** — use a Neon branch.
 
 ### Environment variables
 | Variable | App | Default | Purpose |
@@ -279,7 +302,25 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 - [x] Unit + end-to-end test suites (the e2e suite caught two bugs fixed in this step).
 - [x] Real README and `apps/api/.env.example`.
 
-### Next — Step 4: Launch
+### Hardening Step 4 — Platform tenant editing & staff user management
+- [x] Tenant detail and edit page (`/tenants/[id]`): rename tenant, rename store name, change store slug with uniqueness validation (`409 Conflict` on collision).
+- [x] Tenant operational status toggle (`active` / `suspended`): suspending a tenant locks all its merchants out immediately on their next request and returns 404 for storefront visitors. Tenants are never deleted to preserve order and financial records.
+- [x] Staff user management: platform admins can provision additional merchant logins per tenant (`POST /v1/platform/tenants/:id/users`).
+- [x] Staff account status toggle (`active` / `disabled`): disabling immediately revokes all active sessions in the `sessions` table and blocks subsequent logins.
+- [x] Generic merchant password reset: platform admins can set a new password for any merchant/staff user directly from the tenant page or tenants table, instantly invalidating previous sessions.
+- [x] Automated E2E test coverage for tenant updates, slug conflicts, staff creation, login, disable session revocation, and password resets (16 checks total).
+
+### Hardening Step 5 — Complete Platform SaaS Capabilities (Multi-Store, Impersonation, Admin Fleet, Billing & Plans, Audit Logs, RBAC)
+- [x] **Support Impersonation ("Login as merchant"):** Platform admins issue 5-minute single-use support tokens exchanged for authenticated merchant sessions with an exit banner (`/v1/auth/exchange-impersonation`).
+- [x] **Platform Admin Management UI (`/admins`):** Manage platform admins (`super_admin`, `support`, `viewer`), disable/enable, and reset admin passwords directly from UI.
+- [x] **Multi-Store Support per Tenant:** Store fleet management in tenant detail, store switcher dropdown in merchant admin, scoped via `x-store-id` with cross-tenant authorization checks.
+- [x] **Billing & Plans:** Subscription tiers (`starter`, `growth`, `enterprise`), intervals (`month`/`year`), integer prices (`plan_price_minor`), and dynamic real ARR calculation.
+- [x] **Monitoring & Audit Logs:** Fastify `onResponse` hook for live p95 API response time, `audit_logs` table recording all sensitive admin actions, and UI page (`/audit-logs`) with action filters.
+- [x] **Platform Roles & RBAC:** `PlatformRoleGuard` enforcing role boundaries (`super_admin` full access, `support` access without destructive/billing rights, `viewer` read-only).
+- [x] **AI Storefront Studio & Master Prompt Generator:** Dedicated merchant portal tool (`/storefront-ai`) that generates a business-tailored, production-ready AI design prompt (for Claude, ChatGPT, Cursor, v0) containing complete page specifications, 13 API endpoints, integer money rules, and Pakistani COD conversion optimizations.
+- [x] **Automated E2E test coverage:** Expanded from 16 to 20 comprehensive end-to-end checks validating all newly added capabilities.
+
+### Next — Step 6: Launch
 - [ ] Production database (separate Neon project/branch) + `db:migrate`; point-in-time restore enabled and a restore tested.
 - [ ] Hosting for API and the three Next apps; domains + HTTPS; production env vars (§9).
 - [ ] Push the repository to a private remote (currently local only).
@@ -287,8 +328,7 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 ### Backlog (after launch)
 - [ ] Call `revalidateTag` on product/store edits (Invariant 4) and measure the latency SLAs (Invariant 3).
 - [ ] Courier API integration (Trax/Leopards) for real CNs and airway bills.
-- [ ] Subscription plans & billing (platform ARR is currently `null`).
-- [ ] Product images; collection editing / assigning products after creation; multi-store switcher UI.
+- [ ] Product images; collection editing / assigning products after creation.
 - [ ] Rate limits and lockouts in Redis for multi-instance; error tracking (e.g. Sentry); ESLint configs for the admin apps.
 - [ ] Email-based "forgot password" (needs an email provider).
 - [ ] Remove unused `apps/docs` and `packages/ui`.

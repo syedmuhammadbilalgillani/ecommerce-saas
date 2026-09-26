@@ -1,7 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getPlatformTenants, createTenant, setTenantStatus, formatPrice, errorMessage, type PlatformTenant } from '@/lib/api';
+import Link from 'next/link';
+import {
+  getPlatformTenants,
+  createTenant,
+  setTenantStatus,
+  impersonateTenant,
+  formatPrice,
+  errorMessage,
+  type PlatformTenant,
+} from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -20,11 +29,13 @@ export default function TenantsManagementPage() {
   const [tenants, setTenants] = useState<PlatformTenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [isProvisioning, setIsProvisioning] = useState(false);
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
 
   // Form State
   const [tenantName, setTenantName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugEdited, setSlugEdited] = useState(false);
+  const [plan, setPlan] = useState('starter');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -58,12 +69,14 @@ export default function TenantsManagementPage() {
         slug: slugify(slug || tenantName),
         ownerEmail: ownerEmail.trim(),
         ownerPassword,
+        plan,
       });
       setTenants(prev => [created, ...prev]);
       setIsProvisioning(false);
       setTenantName('');
       setSlug('');
       setSlugEdited(false);
+      setPlan('starter');
       setOwnerEmail('');
       setOwnerPassword('');
     } catch (err) {
@@ -83,6 +96,19 @@ export default function TenantsManagementPage() {
       setError(`Could not update tenant status: ${errorMessage(err)}`);
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const handleImpersonate = async (tenantId: string) => {
+    setImpersonatingId(tenantId);
+    setError(null);
+    try {
+      const res = await impersonateTenant(tenantId);
+      window.open(res.redirectUrl, '_blank');
+    } catch (err) {
+      setError(`Could not open merchant portal: ${errorMessage(err)}`);
+    } finally {
+      setImpersonatingId(null);
     }
   };
 
@@ -146,6 +172,20 @@ export default function TenantsManagementPage() {
                   }}
                   required
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="tPlan">Subscription Tier</Label>
+                <select
+                  id="tPlan"
+                  value={plan}
+                  onChange={(e) => setPlan(e.target.value)}
+                  className="w-full text-xs bg-zinc-900 border border-zinc-800 rounded-md px-3 py-2 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+                >
+                  <option value="starter">Starter — PKR 5,000 / mo (ARR PKR 60,000)</option>
+                  <option value="growth">Growth — PKR 15,000 / mo (ARR PKR 180,000)</option>
+                  <option value="enterprise">Enterprise — PKR 50,000 / mo (ARR PKR 600,000)</option>
+                </select>
               </div>
 
               <div className="space-y-1.5">
@@ -218,14 +258,21 @@ export default function TenantsManagementPage() {
               tenants.map((t) => (
                 <TableRow key={t.id}>
                   <TableCell>
-                    <div className="text-xs font-normal text-zinc-200">{t.name}</div>
+                    <Link href={`/tenants/${t.id}`} className="text-xs font-normal text-zinc-200 hover:text-white hover:underline">
+                      {t.name}
+                    </Link>
                     <div className="text-[10px] text-zinc-500 font-mono">slug: {t.slug ?? '—'}</div>
                   </TableCell>
 
                   <TableCell>
                     <Badge variant="secondary" className="text-[10px] uppercase font-mono">
-                      {t.plan ?? 'no plan'}
+                      {t.plan || 'starter'}
                     </Badge>
+                    {t.planPriceMinor ? (
+                      <div className="text-[10px] text-zinc-500 font-mono">
+                        {formatPrice(t.planPriceMinor)}/{t.planInterval || 'mo'}
+                      </div>
+                    ) : null}
                   </TableCell>
 
                   <TableCell className="text-xs text-zinc-400">
@@ -254,6 +301,12 @@ export default function TenantsManagementPage() {
 
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      <Link
+                        href={`/tenants/${t.id}`}
+                        className="inline-flex items-center h-7 text-[11px] text-zinc-300 hover:text-zinc-100 px-2 rounded bg-zinc-800 border border-zinc-700 transition-colors"
+                      >
+                        Manage
+                      </Link>
                       <Button
                         size="sm"
                         variant="outline"
@@ -271,14 +324,16 @@ export default function TenantsManagementPage() {
                       >
                         Reset password
                       </Button>
-                      <a
-                        href={MERCHANT_ADMIN_URL}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center h-7 text-[11px] text-zinc-300 hover:text-zinc-100 px-2 rounded bg-zinc-800 border border-zinc-700 transition-colors"
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleImpersonate(t.id)}
+                        disabled={impersonatingId === t.id || t.status === 'suspended'}
+                        className="h-7 text-[11px] px-2 text-zinc-300 border-zinc-700 bg-zinc-800 hover:bg-zinc-700"
+                        title={t.status === 'suspended' ? 'Tenant is suspended' : 'Login directly into merchant portal'}
                       >
-                        Portal ↗
-                      </a>
+                        {impersonatingId === t.id ? 'Opening…' : 'Portal ↗'}
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -287,7 +342,9 @@ export default function TenantsManagementPage() {
           </TableBody>
         </Table>
       </div>
-      {resettingFor && <ResetPasswordDialog tenant={resettingFor} onClose={() => setResettingFor(null)} />}
+      {resettingFor && (
+        <ResetPasswordDialog tenantId={resettingFor.id} tenantName={resettingFor.name} onClose={() => setResettingFor(null)} />
+      )}
     </div>
   );
 }

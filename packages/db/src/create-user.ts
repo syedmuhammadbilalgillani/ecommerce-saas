@@ -38,6 +38,7 @@ async function main() {
   const email = arg('email')?.trim().toLowerCase();
   const tenantId = arg('tenant');
   const name = arg('name') ?? null;
+  const platformRole = arg('platform-role') ?? 'super_admin';
 
   if (role !== 'merchant' && role !== 'platform_admin') {
     throw new Error('--role must be "merchant" or "platform_admin"');
@@ -47,6 +48,9 @@ async function main() {
   }
   if (role === 'merchant' && !tenantId) {
     throw new Error('--tenant is required for merchant users');
+  }
+  if (role === 'platform_admin' && !['super_admin', 'support', 'viewer'].includes(platformRole)) {
+    throw new Error('--platform-role must be "super_admin", "support", or "viewer"');
   }
 
   const url = process.env.DATABASE_URL;
@@ -74,6 +78,7 @@ async function main() {
     passwordHash: await hashPassword(password),
     role,
     tenantId: role === 'merchant' ? tenantId! : null,
+    platformRole: role === 'platform_admin' ? platformRole : null,
   });
 
   console.log(`✅ Created ${role} ${email} (${id})`);

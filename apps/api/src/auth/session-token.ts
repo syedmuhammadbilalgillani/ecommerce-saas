@@ -61,6 +61,21 @@ export function setSessionCookie(reply: FastifyReply, role: Role, token: string)
   );
 }
 
+export function setImpersonationCookies(reply: FastifyReply, sessionToken: string, adminEmail: string) {
+  const isProd = process.env.NODE_ENV === 'production';
+  const domainAttr = process.env.COOKIE_DOMAIN ? `; Domain=${process.env.COOKIE_DOMAIN}` : '';
+  const sessionCookie = `${SESSION_COOKIE.merchant}=${encodeURIComponent(sessionToken)}; ${cookieAttributes(Math.floor(SESSION_TTL_MS / 1000))}`;
+  const impCookie = `posflow_impersonated_by=${encodeURIComponent(adminEmail)}; Path=/; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}${isProd ? '; Secure' : ''}${domainAttr}`;
+
+  reply.header('Set-Cookie', [sessionCookie, impCookie]);
+}
+
 export function clearSessionCookie(reply: FastifyReply, role: Role) {
-  reply.header('Set-Cookie', `${SESSION_COOKIE[role]}=; ${cookieAttributes(0)}`);
+  const isProd = process.env.NODE_ENV === 'production';
+  const domainAttr = process.env.COOKIE_DOMAIN ? `; Domain=${process.env.COOKIE_DOMAIN}` : '';
+  const cookies = [`${SESSION_COOKIE[role]}=; ${cookieAttributes(0)}`];
+  if (role === 'merchant') {
+    cookies.push(`posflow_impersonated_by=; Path=/; SameSite=Lax; Max-Age=0${isProd ? '; Secure' : ''}${domainAttr}`);
+  }
+  reply.header('Set-Cookie', cookies);
 }

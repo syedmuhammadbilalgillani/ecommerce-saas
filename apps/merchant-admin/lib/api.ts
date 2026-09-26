@@ -18,6 +18,9 @@ export class AuthError extends Error {}
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const activeStoreId = typeof window !== 'undefined' ? localStorage.getItem('posflow_active_store_id') : null;
+  const storeHeader: Record<string, string> = activeStoreId ? { 'x-store-id': activeStoreId } : {};
+
   try {
     res = await fetch(`${API_URL}${path}`, {
       cache: 'no-store',
@@ -25,6 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       headers: {
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...storeHeader,
         ...init?.headers,
       },
     });
@@ -53,6 +57,13 @@ export function errorMessage(err: unknown): string {
 // ----------------------------------------------------
 // Auth API
 // ----------------------------------------------------
+export interface StoreSummary {
+  id: string;
+  name: string;
+  slug: string;
+  currency: string;
+}
+
 export interface CurrentMerchant {
   id: string;
   email: string;
@@ -60,6 +71,7 @@ export interface CurrentMerchant {
   tenantId: string;
   storeId: string;
   storeName: string;
+  stores?: StoreSummary[];
 }
 
 export async function login(email: string, password: string): Promise<void> {

@@ -1,8 +1,8 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService, type SessionUser } from './auth.service';
 import { CurrentMerchant, CurrentPlatformUser, MerchantGuard, PlatformGuard, type MerchantContext } from './guards';
-import { clearSessionCookie, readSessionToken, setSessionCookie } from './session-token';
+import { clearSessionCookie, readSessionToken, setSessionCookie, setImpersonationCookies } from './session-token';
 import { RateLimit } from '../common/rate-limit';
 
 interface LoginBody {
@@ -28,6 +28,21 @@ export class AuthController {
     return { success: true, data: user };
   }
 
+  @Post('exchange-impersonation')
+  @RateLimit(20, 60)
+  @HttpCode(HttpStatus.OK)
+  async exchangeImpersonation(
+    @Body() body: { token: string },
+    @Res({ passthrough: true }) reply: FastifyReply
+  ) {
+    if (!body?.token || typeof body.token !== 'string') {
+      throw new BadRequestException('Impersonation token is required');
+    }
+    const { sessionToken, user, adminEmail } = await this.auth.exchangeImpersonationToken(body.token);
+    setImpersonationCookies(reply, sessionToken, adminEmail);
+    return { success: true, data: { user, impersonatedBy: adminEmail } };
+  }
+
   @Post('merchant/logout')
   @HttpCode(HttpStatus.OK)
   async merchantLogout(@Req() req: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
@@ -38,8 +53,17 @@ export class AuthController {
 
   @Get('merchant/me')
   @UseGuards(MerchantGuard)
-  merchantMe(@CurrentMerchant() merchant: MerchantContext) {
-    return { success: true, data: { ...merchant.user, storeId: merchant.storeId, storeName: merchant.storeName } };
+  async merchantMe(@CurrentMerchant() merchant: MerchantContext) {
+    const stores = await this.auth.getTenantStores(merchant.tenantId);
+    return {
+      success: true,
+      data: {
+        ...merchant.user,
+        storeId: merchant.storeId,
+        storeName: merchant.storeName,
+        stores,
+      },
+    };
   }
 
   @Post('merchant/password')

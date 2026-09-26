@@ -12,6 +12,9 @@ export const tenants = pgTable('tenants', {
   defaultCurrency: text('default_currency').default('PKR').notNull(),
   defaultLocale: text('default_locale').default('en').notNull(),
   status: text('status').default('active').notNull(),
+  plan: text('plan').default('starter').notNull(),
+  planPriceMinor: integer('plan_price_minor').default(500000).notNull(),
+  planInterval: text('plan_interval').default('month').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -344,6 +347,7 @@ export const users = pgTable(
     name: text('name'),
     passwordHash: text('password_hash').notNull(), // scrypt: "scrypt$<salt b64>$<hash b64>"
     role: text('role').notNull(), // 'merchant' | 'platform_admin'
+    platformRole: text('platform_role').default('super_admin'), // 'super_admin' | 'support' | 'viewer'
     tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }), // null for platform admins
     status: text('status').default('active').notNull(), // 'active' | 'disabled'
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -365,6 +369,29 @@ export const sessions = pgTable(
   },
   (table) => [
     index('idx_sessions_user').on(table.userId),
+  ]
+);
+
+// ----------------------------------------------------
+// 9b. Audit Logs (Platform Administrative Activity)
+// ----------------------------------------------------
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: text('id').primaryKey().notNull(),
+    actorId: text('actor_id').notNull(),
+    actorEmail: text('actor_email').notNull(),
+    actorRole: text('actor_role').notNull(),
+    action: text('action').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_audit_logs_actor').on(table.actorId),
+    index('idx_audit_logs_target').on(table.targetType, table.targetId),
+    index('idx_audit_logs_created').on(table.createdAt),
   ]
 );
 

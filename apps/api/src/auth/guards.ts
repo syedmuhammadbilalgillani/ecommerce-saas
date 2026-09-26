@@ -6,11 +6,13 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  SetMetadata,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { FastifyRequest } from 'fastify';
 import { DRIZZLE } from '../db/db.module';
 import { type Database, stores, eq, asc } from '@repo/db';
-import { AuthService, type SessionUser } from './auth.service';
+import { AuthService, type SessionUser, type PlatformRole } from './auth.service';
 import { readSessionToken } from './session-token';
 
 export interface MerchantContext {
@@ -82,6 +84,31 @@ export class PlatformGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<AuthedRequest>();
     req.platformUser = await this.auth.requireUser(readSessionToken(req, 'platform_admin'), 'platform_admin');
+    return true;
+  }
+}
+
+export const PlatformRoles = (...roles: PlatformRole[]) => SetMetadata('platform_roles', roles);
+
+@Injectable()
+export class PlatformRoleGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.getAllAndOverride<PlatformRole[]>('platform_roles', [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!requiredRoles || requiredRoles.length === 0) return true;
+
+    const req = context.switchToHttp().getRequest<AuthedRequest>();
+    const user = req.platformUser;
+    if (!user) return false;
+
+    const userRole = user.platformRole || 'super_admin';
+    if (!requiredRoles.includes(userRole)) {
+      throw new ForbiddenException(`Action requires ${requiredRoles.join(' or ')} role (current: ${userRole})`);
+    }
     return true;
   }
 }

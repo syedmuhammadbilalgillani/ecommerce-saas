@@ -7,6 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { TelemetryService } from './common/telemetry.service';
 
 function parseTrustProxy(value: string | undefined): boolean | number | string {
   if (!value) return false;
@@ -37,6 +38,11 @@ async function bootstrap() {
 
   app.getHttpAdapter().getInstance().addHook('onSend', async (req, reply) => {
     reply.header('x-request-id', req.id);
+  });
+
+  const telemetry = app.get(TelemetryService);
+  app.getHttpAdapter().getInstance().addHook('onResponse', async (req, reply) => {
+    telemetry.recordLatency(reply.elapsedTime);
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());

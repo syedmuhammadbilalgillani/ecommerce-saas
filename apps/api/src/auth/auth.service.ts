@@ -1,13 +1,16 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, users, sessions, eq, and, ne, gt, lt, verifyPassword, hashPassword, MIN_PASSWORD_LENGTH } from '@repo/db';
+import { type Database, users, sessions, stores, eq, and, ne, gt, lt, asc, verifyPassword, hashPassword, MIN_PASSWORD_LENGTH } from '@repo/db';
 import { hashSecret, newSecret, SESSION_TTL_MS, type Role } from './session-token';
+
+export type PlatformRole = 'super_admin' | 'support' | 'viewer';
 
 export interface SessionUser {
   id: string;
   email: string;
   name: string | null;
   role: Role;
+  platformRole?: PlatformRole | null;
   tenantId: string | null;
 }
 
@@ -19,6 +22,11 @@ export class AuthService {
   // Per-email failed login counter. In-memory is enough for a single API instance;
   // move to Redis/DB when running several instances.
   private readonly failedLogins = new Map<string, { count: number; firstAt: number }>();
+  // Single-use 60-second exchange tokens for platform-to-merchant impersonation
+  private readonly impersonationTokens = new Map<
+    string,
+    { userId: string; tenantId: string; adminId: string; adminEmail: string; expiresAt: number }
+  >();
 
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
@@ -91,6 +99,51 @@ export class AuthService {
     });
   }
 
+  /** Generates a single-use 60-second token allowing a platform admin to impersonate a merchant user. */
+  createImpersonationToken(admin: SessionUser, tenantId: string, userId: string): string {
+    const token = `imp_${newSecret(24)}`;
+    this.impersonationTokens.set(token, {
+      userId,
+      tenantId,
+      adminId: admin.id,
+      adminEmail: admin.email,
+      expiresAt: Date.now() + 60_000,
+    });
+    return token;
+  }
+
+  /** Exchanges a valid 60-second impersonation token for a real merchant session and deletes the token. */
+  async exchangeImpersonationToken(token: string): Promise<{ sessionToken: string; user: SessionUser; adminEmail: string }> {
+    const now = Date.now();
+    for (const [k, v] of this.impersonationTokens.entries()) {
+      if (now > v.expiresAt) this.impersonationTokens.delete(k);
+    }
+
+    const entry = this.impersonationTokens.get(token);
+    if (!entry || now > entry.expiresAt) {
+      throw new UnauthorizedException('Impersonation token is invalid or expired. Please generate a new link from Platform Admin.');
+    }
+    this.impersonationTokens.delete(token);
+
+    const user = await this.db.query.users.findFirst({
+      where: eq(users.id, entry.userId),
+      with: { tenant: true },
+    });
+
+    if (!user || user.status !== 'active' || user.role !== 'merchant' || user.tenant?.status !== 'active') {
+      throw new UnauthorizedException('Target merchant account or store is not active.');
+    }
+
+    const sessionToken = newSecret();
+    await this.db.insert(sessions).values({
+      id: hashSecret(sessionToken),
+      userId: user.id,
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+    });
+
+    return { sessionToken, user: this.toSessionUser(user), adminEmail: entry.adminEmail };
+  }
+
   /** Resolves a session token to an active user of the given role, or throws 401. */
   async requireUser(token: string | null, role: Role): Promise<SessionUser> {
     if (!token) {
@@ -112,12 +165,13 @@ export class AuthService {
     return this.toSessionUser(user);
   }
 
-  private toSessionUser(user: { id: string; email: string; name: string | null; role: string; tenantId: string | null }): SessionUser {
+  private toSessionUser(user: { id: string; email: string; name: string | null; role: string; platformRole?: string | null; tenantId: string | null }): SessionUser {
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role as Role,
+      platformRole: (user.platformRole as PlatformRole) || (user.role === 'platform_admin' ? 'super_admin' : null),
       tenantId: user.tenantId,
     };
   }
@@ -141,5 +195,13 @@ export class AuthService {
     } else {
       entry.count += 1;
     }
+  }
+
+  async getTenantStores(tenantId: string) {
+    return this.db.query.stores.findMany({
+      where: eq(stores.tenantId, tenantId),
+      columns: { id: true, name: true, slug: true, currency: true },
+      orderBy: [asc(stores.createdAt)],
+    });
   }
 }

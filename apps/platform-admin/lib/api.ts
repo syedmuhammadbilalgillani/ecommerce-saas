@@ -50,8 +50,9 @@ export interface PlatformTenant {
   id: string;
   name: string;
   slug: string | null;
-  /** Subscription plans are not stored yet, so this is always null for now. */
-  plan: string | null;
+  plan: 'starter' | 'growth' | 'enterprise' | string | null;
+  planPriceMinor?: number;
+  planInterval?: 'month' | 'year' | string;
   status: 'active' | 'suspended';
   createdAt: string;
   storesCount: number;
@@ -73,6 +74,7 @@ export interface PlatformAdmin {
   id: string;
   email: string;
   name: string | null;
+  platformRole?: 'super_admin' | 'support' | 'viewer';
 }
 
 export async function login(email: string, password: string): Promise<void> {
@@ -103,6 +105,7 @@ export async function createTenant(input: {
   slug: string;
   ownerEmail: string;
   ownerPassword: string;
+  plan?: string;
 }): Promise<PlatformTenant> {
   return request<PlatformTenant>('/v1/platform/tenants', {
     method: 'POST',
@@ -117,17 +120,94 @@ export async function setTenantStatus(id: string, status: 'active' | 'suspended'
   });
 }
 
+export interface TenantStoreDetail {
+  id: string;
+  name: string;
+  slug: string;
+  currency: string;
+  whatsappPhone: string | null;
+  createdAt: string;
+}
+
+export interface TenantDetail {
+  id: string;
+  name: string;
+  status: 'active' | 'suspended';
+  plan?: 'starter' | 'growth' | 'enterprise' | string;
+  planPriceMinor?: number;
+  planInterval?: 'month' | 'year' | string;
+  createdAt: string;
+  storeId: string | null;
+  storeName: string | null;
+  slug: string | null;
+  whatsappPhone: string | null;
+  monthlyGmvMinor: number;
+  stores?: TenantStoreDetail[];
+}
+
+export async function getTenant(id: string, init?: RequestInit): Promise<TenantDetail> {
+  return request<TenantDetail>(`/v1/platform/tenants/${encodeURIComponent(id)}`, init);
+}
+
+export async function updateTenant(
+  id: string,
+  input: {
+    name?: string;
+    storeName?: string;
+    slug?: string;
+    plan?: string;
+    planPriceMinor?: number;
+    planInterval?: string;
+  }
+): Promise<TenantDetail> {
+  return request<TenantDetail>(`/v1/platform/tenants/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function addTenantStore(
+  tenantId: string,
+  input: { name: string; slug: string; whatsappPhone?: string }
+): Promise<TenantDetail> {
+  return request<TenantDetail>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/stores`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export interface TenantUser {
   id: string;
   email: string;
   name: string | null;
   role: string;
-  status: string;
+  status: 'active' | 'disabled';
   createdAt: string;
 }
 
 export async function getTenantUsers(tenantId: string): Promise<TenantUser[]> {
   return request<TenantUser[]>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/users`);
+}
+
+export async function createTenantUser(
+  tenantId: string,
+  input: { email: string; password: string; name?: string }
+): Promise<TenantUser[]> {
+  return request<TenantUser[]>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/users`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function setTenantUserStatus(
+  tenantId: string,
+  userId: string,
+  status: 'active' | 'disabled'
+): Promise<TenantUser[]> {
+  return request<TenantUser[]>(
+    `/v1/platform/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/status`,
+    { method: 'PATCH', body: JSON.stringify({ status }) }
+  );
 }
 
 /** Sets a new password for a merchant user and signs them out everywhere. */
@@ -144,3 +224,86 @@ export async function changePassword(currentPassword: string, newPassword: strin
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 }
+
+/** Obtains a single-use 60-second exchange URL to log directly into merchant portal without a password. */
+export async function impersonateTenant(
+  tenantId: string,
+  userId?: string
+): Promise<{ token: string; targetUser: { id: string; email: string; name: string | null }; redirectUrl: string }> {
+  return request<{ token: string; targetUser: { id: string; email: string; name: string | null }; redirectUrl: string }>(
+    `/v1/platform/tenants/${encodeURIComponent(tenantId)}/impersonate`,
+    {
+      method: 'POST',
+      body: JSON.stringify(userId ? { userId } : {}),
+    }
+  );
+}
+
+export interface PlatformAdminUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  platformRole?: 'super_admin' | 'support' | 'viewer';
+  status: 'active' | 'disabled';
+  createdAt: string;
+}
+
+export async function getPlatformAdmins(): Promise<PlatformAdminUser[]> {
+  return request<PlatformAdminUser[]>('/v1/platform/admins');
+}
+
+export async function createPlatformAdmin(input: {
+  email: string;
+  password: string;
+  name?: string;
+  platformRole?: string;
+}): Promise<PlatformAdminUser[]> {
+  return request<PlatformAdminUser[]>('/v1/platform/admins', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function setPlatformAdminStatus(
+  adminId: string,
+  status: 'active' | 'disabled'
+): Promise<PlatformAdminUser[]> {
+  return request<PlatformAdminUser[]>(`/v1/platform/admins/${encodeURIComponent(adminId)}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function resetPlatformAdminPassword(adminId: string, newPassword: string): Promise<void> {
+  await request(`/v1/platform/admins/${encodeURIComponent(adminId)}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword }),
+  });
+}
+
+export interface AuditLog {
+  id: string;
+  actorId: string;
+  actorEmail: string;
+  actorRole: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export async function getAuditLogs(params?: {
+  limit?: number;
+  action?: string;
+  targetType?: string;
+}): Promise<AuditLog[]> {
+  const query = new URLSearchParams();
+  if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.action) query.set('action', params.action);
+  if (params?.targetType) query.set('targetType', params.targetType);
+  const qStr = query.toString();
+  return request<AuditLog[]>(`/v1/platform/audit-logs${qStr ? `?${qStr}` : ''}`);
+}
+

@@ -6,9 +6,9 @@ const SESSION_COOKIE = 'posflow_merchant_session';
 
 export function proxy(request: NextRequest) {
   const hasSession = request.cookies.has(SESSION_COOKIE);
-  const isLoginPage = request.nextUrl.pathname === '/login';
+  const isPublicPage = request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/impersonate';
 
-  if (!hasSession && !isLoginPage) {
+  if (!hasSession && !isPublicPage) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
   return NextResponse.next();

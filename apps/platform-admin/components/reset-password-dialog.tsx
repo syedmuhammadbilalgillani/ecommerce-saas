@@ -1,29 +1,38 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { errorMessage, getTenantUsers, resetMerchantPassword, type PlatformTenant, type TenantUser } from '@/lib/api';
+import { errorMessage, getTenantUsers, resetMerchantPassword, type TenantUser } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+interface ResetPasswordDialogProps {
+  tenantId: string;
+  tenantName: string;
+  /** Preselect one user and skip fetching the tenant's user list (used from the tenant detail page). */
+  onlyUser?: TenantUser;
+  onClose: () => void;
+}
+
 /** Lets a platform admin set a new password for one of a tenant's merchant users. */
-export function ResetPasswordDialog({ tenant, onClose }: { tenant: PlatformTenant; onClose: () => void }) {
-  const [users, setUsers] = useState<TenantUser[] | null>(null);
-  const [userId, setUserId] = useState('');
+export function ResetPasswordDialog({ tenantId, tenantName, onlyUser, onClose }: ResetPasswordDialogProps) {
+  const [users, setUsers] = useState<TenantUser[] | null>(onlyUser ? [onlyUser] : null);
+  const [userId, setUserId] = useState(onlyUser?.id ?? '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    getTenantUsers(tenant.id)
+    if (onlyUser) return;
+    getTenantUsers(tenantId)
       .then((list) => {
         const merchants = list.filter((u) => u.role === 'merchant');
         setUsers(merchants);
         setUserId(merchants[0]?.id ?? '');
       })
       .catch((err) => setError(errorMessage(err)));
-  }, [tenant.id]);
+  }, [tenantId, onlyUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,7 +56,7 @@ export function ResetPasswordDialog({ tenant, onClose }: { tenant: PlatformTenan
       <div className="w-full max-w-md space-y-4 rounded-lg border border-zinc-800 bg-zinc-950 p-5">
         <div>
           <h2 className="text-sm font-medium text-zinc-100">Reset merchant password</h2>
-          <p className="text-xs text-zinc-500">{tenant.name}</p>
+          <p className="text-xs text-zinc-500">{tenantName}</p>
         </div>
 
         {error && (
