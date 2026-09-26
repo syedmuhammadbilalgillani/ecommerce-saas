@@ -160,13 +160,15 @@ ecommerce-saas/
 * **Platform routes (`/v1/platform/*`)** use `PlatformGuard` (cookie `posflow_platform_session`, role `platform_admin`).
 * **Storefront routes (`/v1/storefront/*`)** use `StorefrontStoreGuard`: store from `x-store-id` (else `DEFAULT_STORE_ID`); unknown or suspended-tenant stores return 404.
 * Suspending a tenant immediately invalidates its merchants' sessions (checked on every request).
+* Admin apps never call the API cross-origin from the browser: they call `/api/*` on their own host, which `next.config.mjs` rewrites to `API_URL`. This keeps session cookies first-party (a cross-site API host would silently drop them).
 * Accounts: `pnpm db:create-user --role platform_admin --email ...` (hidden password prompt). Platform admins create a tenant together with its owner's merchant login.
 
 ### Environment variables
 | Variable | App | Default | Purpose |
 | :--- | :--- | :--- | :--- |
 | `CORS_ORIGINS` | api | `http://localhost:3000,3001,3002` | Comma-separated origins allowed to send cookies |
-| `COOKIE_DOMAIN` | api | (host-only) | e.g. `.example.com` so admin apps on subdomains share the session cookie |
+| `COOKIE_DOMAIN` | api | (host-only) | Optional; normally unset because admin apps proxy the API same-origin |
+| `API_URL` | merchant-admin, platform-admin | `http://127.0.0.1:4000` | Backend for the `/api/*` rewrite and for server components |
 | `DEFAULT_STORE_ID` | api | `store_default` | Store used when a storefront request has no `x-store-id` |
 | `NEXT_PUBLIC_STORE_ID` | web | `store_default` | Store this storefront deployment sells for |
 | `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | Links to the live storefront |

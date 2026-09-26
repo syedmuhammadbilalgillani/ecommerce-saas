@@ -1,4 +1,7 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+// Browser calls go through this app's own /api rewrite (see next.config.mjs) so session
+// cookies are first-party. Server components call the API directly and forward cookies.
+const API_URL =
+  typeof window === 'undefined' ? process.env.API_URL || 'http://127.0.0.1:4000' : '/api';
 
 export { formatPrice } from './utils';
 
