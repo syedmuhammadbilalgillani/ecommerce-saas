@@ -278,6 +278,11 @@ async function initDatabase() {
     await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "discount_code" text;`;
     await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "discount_minor" integer DEFAULT 0 NOT NULL;`;
 
+    // Courier columns were added to the schema after some databases were first created
+    await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "courier_name" text;`;
+    await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "courier_tracking_number" text;`;
+    await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "courier_status" text;`;
+
     // Performance Indexes
     await sql`CREATE INDEX IF NOT EXISTS "idx_categories_parent" ON "categories" ("parent_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_collections_store_slug" ON "collections" ("store_id", "slug");`;

@@ -12,6 +12,17 @@ import {
 } from '@nestjs/common';
 import { CartService } from './cart.service';
 
+const MAX_LINE_QUANTITY = 999;
+
+function parseQuantity(raw: unknown, { allowZero }: { allowZero: boolean }): number {
+  const qty = raw === undefined ? 1 : raw;
+  const min = allowZero ? 0 : 1;
+  if (typeof qty !== 'number' || !Number.isInteger(qty) || qty < min || qty > MAX_LINE_QUANTITY) {
+    throw new BadRequestException(`quantity must be a whole number between ${min} and ${MAX_LINE_QUANTITY}`);
+  }
+  return qty;
+}
+
 @Controller('v1/storefront/cart')
 export class CartController {
   constructor(private readonly cartService: CartService) {}
@@ -40,7 +51,7 @@ export class CartController {
       throw new BadRequestException('variantId is required');
     }
 
-    const qty = body.quantity && body.quantity > 0 ? body.quantity : 1;
+    const qty = parseQuantity(body.quantity, { allowZero: false });
     const cart = await this.cartService.addItem(headerCartId, body.variantId, qty, storeId);
 
     return {
@@ -61,7 +72,7 @@ export class CartController {
       throw new BadRequestException('x-cart-id header or cartId query parameter is required');
     }
 
-    const qty = typeof body?.quantity === 'number' ? body.quantity : 1;
+    const qty = parseQuantity(body?.quantity, { allowZero: true });
     const cart = await this.cartService.updateItemQuantity(cartId, itemId, qty);
 
     return {

@@ -13,7 +13,8 @@
     "baseUrl": "./",
     "incremental": false,
     "skipLibCheck": true,
-    "strict": false
+    "strict": false,
+    "strictNullChecks": true
   },
   "include": ["src/**/*"]
 }

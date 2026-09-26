@@ -17,7 +17,7 @@ export default async function ProductDetailPage({
     notFound();
   }
 
-  const categoryName = product.category?.name || 'Clothing';
+  const categoryName = product.category?.name;
 
   return (
     <div className="container" style={{ padding: '2rem 1.5rem 5rem' }}>
@@ -25,10 +25,12 @@ export default async function ProductDetailPage({
       <nav style={{ marginBottom: '1.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
         <Link href="/" style={{ color: 'inherit', textDecoration: 'none' }}>Home</Link>
         <span style={{ margin: '0 0.5rem' }}>/</span>
-        <Link href="/collections/summer-2026" style={{ color: 'inherit', textDecoration: 'none' }}>
-          {categoryName}
-        </Link>
-        <span style={{ margin: '0 0.5rem' }}>/</span>
+        {categoryName && (
+          <>
+            <span>{categoryName}</span>
+            <span style={{ margin: '0 0.5rem' }}>/</span>
+          </>
+        )}
         <span style={{ color: 'var(--text)' }}>{product.title}</span>
       </nav>
 

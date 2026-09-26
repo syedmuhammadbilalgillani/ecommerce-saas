@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getDashboardAnalytics, getOrders, formatPrice } from '@/lib/api';
+import { getAnalytics, getOrders, formatPrice } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,11 +8,11 @@ export const revalidate = 0; // Fresh metrics
 
 export default async function MerchantDashboardPage() {
   const [analytics, orders] = await Promise.all([
-    getDashboardAnalytics(),
+    getAnalytics(),
     getOrders(),
   ]);
 
-  const orderList = Array.isArray(orders) ? orders : [];
+  const orderList = orders;
   const recentOrders = orderList.slice(0, 5);
 
   return (
@@ -47,9 +47,9 @@ export default async function MerchantDashboardPage() {
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="text-lg font-medium text-foreground">
-              {formatPrice(analytics.grossRevenueMinor)}
+              {formatPrice(analytics.grossSalesMinor)}
             </div>
-            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Across all confirmed orders</p>
+            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Excludes cancelled orders</p>
           </CardContent>
         </Card>
 
@@ -73,7 +73,7 @@ export default async function MerchantDashboardPage() {
             <div className="text-lg font-medium text-foreground">
               {formatPrice(analytics.pendingCodMinor)}
             </div>
-            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Held with couriers (Trax/Leopards)</p>
+            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Unpaid COD orders</p>
           </CardContent>
         </Card>
 
@@ -85,7 +85,7 @@ export default async function MerchantDashboardPage() {
             <div className="text-lg font-medium text-foreground">
               {analytics.rtoRatePercent}%
             </div>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-normal mt-0.5">Below industry average (8%)</p>
+            <p className="text-[11px] text-muted-foreground font-normal mt-0.5">Returned orders ÷ all orders</p>
           </CardContent>
         </Card>
       </div>

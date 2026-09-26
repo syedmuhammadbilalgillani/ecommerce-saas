@@ -1,8 +1,9 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+const CART_ID_KEY = 'posflow_cart_id';
 
 export interface CartItem {
   id: string;
@@ -29,219 +30,119 @@ interface CartContextType {
   cart: Cart | null;
   isOpen: boolean;
   isLoading: boolean;
+  /** Last cart error to show the shopper; null when the last action succeeded. */
+  error: string | null;
   openCart: () => void;
   closeCart: () => void;
-  addItem: (variantId: string, quantity?: number) => Promise<void>;
+  addItem: (variantId: string, quantity?: number) => Promise<boolean>;
   updateQuantity: (itemId: string, quantity: number) => Promise<void>;
   removeItem: (itemId: string) => Promise<void>;
   clearCart: () => void;
+  clearError: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
+
+function readCartId(): string | undefined {
+  try {
+    return localStorage.getItem(CART_ID_KEY) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeCartId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(CART_ID_KEY, id);
+    else localStorage.removeItem(CART_ID_KEY);
+    // Clean up the old offline cache: carts are server-authoritative now.
+    localStorage.removeItem('posflow_cart_data');
+  } catch {}
+}
+
+/** Sends a cart request and returns the server's cart. Throws with a shopper-readable message. */
+async function cartRequest(path: string, init: RequestInit = {}): Promise<Cart> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/v1/storefront/cart${path}`, init);
+  } catch {
+    throw new Error('Could not reach the store. Please check your connection and try again.');
+  }
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.data) {
+    throw new Error(json?.message || 'Something went wrong with your cart. Please try again.');
+  }
+  return json.data as Cart;
+}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<Cart | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Initialize or fetch existing cart from localStorage
-  useEffect(() => {
-    const savedCartId = localStorage.getItem('posflow_cart_id') || undefined;
-    fetchCart(savedCartId);
-  }, []);
-
-  const fetchCart = async (cartId?: string) => {
+  const run = useCallback(async (action: () => Promise<Cart>): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
     try {
-      setIsLoading(true);
-      const res = await fetch(`${API_URL}/v1/storefront/cart${cartId ? `?cartId=${cartId}` : ''}`, {
-        headers: cartId ? { 'x-cart-id': cartId } : {},
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          setCart(json.data);
-          localStorage.setItem('posflow_cart_id', json.data.id);
-          localStorage.setItem('posflow_cart_data', JSON.stringify(json.data));
-          return;
-        }
-      }
-    } catch {
-      // Graceful fallback to local cached cart when API is temporarily offline
-      const cached = localStorage.getItem('posflow_cart_data');
-      if (cached) {
-        try {
-          setCart(JSON.parse(cached));
-        } catch {}
-      }
+      const next = await action();
+      setCart(next);
+      writeCartId(next.id);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong with your cart.');
+      return false;
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const savedCartId = readCartId();
+    run(() => cartRequest('', { headers: savedCartId ? { 'x-cart-id': savedCartId } : {} }));
+  }, [run]);
 
   const addItem = async (variantId: string, quantity: number = 1) => {
-    try {
-      setIsLoading(true);
-      const cartId = cart?.id || localStorage.getItem('posflow_cart_id') || undefined;
-
-      const res = await fetch(`${API_URL}/v1/storefront/cart/items`, {
+    const cartId = cart?.id || readCartId();
+    const ok = await run(() =>
+      cartRequest('/items', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(cartId ? { 'x-cart-id': cartId } : {}),
         },
         body: JSON.stringify({ variantId, quantity }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          setCart(json.data);
-          localStorage.setItem('posflow_cart_id', json.data.id);
-          localStorage.setItem('posflow_cart_data', JSON.stringify(json.data));
-          setIsOpen(true);
-          return;
-        }
-      }
-    } catch {
-      // Resilient local cart fallback if API is unreachable
-    } finally {
-      setIsLoading(false);
-    }
-
-    // Client-side fallback so user is never blocked
-    setCart((prev) => {
-      const prevItems = prev?.items || [];
-      const existing = prevItems.find((i) => i.variantId === variantId);
-      let updatedItems: CartItem[];
-      if (existing) {
-        updatedItems = prevItems.map((i) =>
-          i.variantId === variantId
-            ? { ...i, quantity: i.quantity + quantity, totalMinor: (i.quantity + quantity) * i.priceMinor }
-            : i
-        );
-      } else {
-        const newItem: CartItem = {
-          id: `item_${Date.now()}`,
-          variantId,
-          productId: 'prod_fallback',
-          title: 'Selected Product',
-          variantTitle: 'Default Variant',
-          sku: 'SKU-01',
-          priceMinor: 249000,
-          quantity,
-          totalMinor: 249000 * quantity,
-        };
-        updatedItems = [...prevItems, newItem];
-      }
-      const newSubtotal = updatedItems.reduce((sum, item) => sum + item.totalMinor, 0);
-      const newCart: Cart = {
-        id: prev?.id || `cart_local_${Date.now()}`,
-        storeId: 'store_default',
-        currency: 'PKR',
-        itemCount: updatedItems.reduce((sum, item) => sum + item.quantity, 0),
-        subtotalMinor: newSubtotal,
-        items: updatedItems,
-      };
-      localStorage.setItem('posflow_cart_data', JSON.stringify(newCart));
-      setIsOpen(true);
-      return newCart;
-    });
+      })
+    );
+    if (ok) setIsOpen(true);
+    return ok;
   };
 
   const updateQuantity = async (itemId: string, quantity: number) => {
     if (!cart?.id) return;
-    try {
-      setIsLoading(true);
-      const res = await fetch(`${API_URL}/v1/storefront/cart/items/${itemId}`, {
+    await run(() =>
+      cartRequest(`/items/${encodeURIComponent(itemId)}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-cart-id': cart.id,
-        },
+        headers: { 'Content-Type': 'application/json', 'x-cart-id': cart.id },
         body: JSON.stringify({ quantity }),
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          setCart(json.data);
-          localStorage.setItem('posflow_cart_data', JSON.stringify(json.data));
-          return;
-        }
-      }
-    } catch {
-      // Local fallback
-    } finally {
-      setIsLoading(false);
-    }
-
-    setCart((prev) => {
-      if (!prev) return null;
-      const updated = prev.items.map((i) =>
-        i.id === itemId
-          ? { ...i, quantity, totalMinor: quantity * i.priceMinor }
-          : i
-      );
-      const newSubtotal = updated.reduce((sum, item) => sum + item.totalMinor, 0);
-      const newCart = {
-        ...prev,
-        itemCount: updated.reduce((sum, item) => sum + item.quantity, 0),
-        subtotalMinor: newSubtotal,
-        items: updated,
-      };
-      localStorage.setItem('posflow_cart_data', JSON.stringify(newCart));
-      return newCart;
-    });
+      })
+    );
   };
 
   const removeItem = async (itemId: string) => {
     if (!cart?.id) return;
-    try {
-      setIsLoading(true);
-      const res = await fetch(`${API_URL}/v1/storefront/cart/items/${itemId}`, {
+    await run(() =>
+      cartRequest(`/items/${encodeURIComponent(itemId)}`, {
         method: 'DELETE',
-        headers: {
-          'x-cart-id': cart.id,
-        },
-      });
-
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          setCart(json.data);
-          localStorage.setItem('posflow_cart_data', JSON.stringify(json.data));
-          return;
-        }
-      }
-    } catch {
-      // Local fallback
-    } finally {
-      setIsLoading(false);
-    }
-
-    setCart((prev) => {
-      if (!prev) return null;
-      const updated = prev.items.filter((i) => i.id !== itemId);
-      const newSubtotal = updated.reduce((sum, item) => sum + item.totalMinor, 0);
-      const newCart = {
-        ...prev,
-        itemCount: updated.reduce((sum, item) => sum + item.quantity, 0),
-        subtotalMinor: newSubtotal,
-        items: updated,
-      };
-      localStorage.setItem('posflow_cart_data', JSON.stringify(newCart));
-      return newCart;
-    });
+        headers: { 'x-cart-id': cart.id },
+      })
+    );
   };
 
   const clearCart = () => {
     setCart(null);
-    localStorage.removeItem('posflow_cart_id');
-    localStorage.removeItem('posflow_cart_data');
+    writeCartId(null);
   };
-
-  const openCart = () => setIsOpen(true);
-  const closeCart = () => setIsOpen(false);
 
   return (
     <CartContext.Provider
@@ -249,12 +150,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         cart,
         isOpen,
         isLoading,
-        openCart,
-        closeCart,
+        error,
+        openCart: () => setIsOpen(true),
+        closeCart: () => setIsOpen(false),
         addItem,
         updateQuantity,
         removeItem,
         clearCart,
+        clearError: () => setError(null),
       }}
     >
       {children}

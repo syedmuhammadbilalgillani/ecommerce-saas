@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCart } from '../../lib/cart-context';
@@ -53,6 +53,7 @@ export default function CheckoutPage() {
     value: number;
     discountAmountMinor: number;
     message: string;
+    validatedSubtotalMinor: number;
   } | null>(null);
   const [discountError, setDiscountError] = useState<string | null>(null);
   const [isValidatingDiscount, setIsValidatingDiscount] = useState(false);
@@ -62,6 +63,15 @@ export default function CheckoutPage() {
   const shippingFeeMinor = 0; // Free delivery promo
   const discountMinor = appliedDiscount ? appliedDiscount.discountAmountMinor : 0;
   const totalMinor = Math.max(0, subtotalMinor - discountMinor + shippingFeeMinor);
+
+  // A discount was priced against a specific subtotal; if the cart changes, make the shopper re-apply it
+  // so the total shown always matches what the server will charge.
+  useEffect(() => {
+    if (appliedDiscount && appliedDiscount.validatedSubtotalMinor !== subtotalMinor) {
+      setAppliedDiscount(null);
+      setDiscountError('Your cart changed — please apply the discount code again.');
+    }
+  }, [subtotalMinor, appliedDiscount]);
 
   const handleApplyDiscount = async () => {
     if (!promoCodeInput.trim()) return;
@@ -83,7 +93,7 @@ export default function CheckoutPage() {
         throw new Error(json.message || 'Invalid or expired coupon code');
       }
 
-      setAppliedDiscount(json.data);
+      setAppliedDiscount({ ...json.data, validatedSubtotalMinor: subtotalMinor });
       setPromoCodeInput('');
     } catch (err: any) {
       setDiscountError(err.message || 'Could not apply coupon');

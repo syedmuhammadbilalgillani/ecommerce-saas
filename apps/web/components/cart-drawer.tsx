@@ -6,7 +6,7 @@ import { useCart } from '../lib/cart-context';
 import { formatPrice } from '../lib/api';
 
 export function CartDrawer() {
-  const { cart, isOpen, closeCart, updateQuantity, removeItem, isLoading } = useCart();
+  const { cart, isOpen, closeCart, updateQuantity, removeItem, isLoading, error } = useCart();
 
   if (!isOpen) return null;
 
@@ -85,6 +85,22 @@ export function CartDrawer() {
 
         {/* Drawer Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+          {error && (
+            <div
+              role="alert"
+              style={{
+                marginBottom: '1rem',
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                border: '1px solid #ef4444',
+                background: 'rgba(239, 68, 68, 0.1)',
+                color: '#f87171',
+                fontSize: '0.85rem',
+              }}
+            >
+              {error}
+            </div>
+          )}
           {items.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)' }}>
               <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>🛒</div>

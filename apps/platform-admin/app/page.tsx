@@ -12,7 +12,7 @@ export default async function PlatformAdminDashboard() {
     getPlatformTenants(),
   ]);
 
-  const tenants = Array.isArray(rawTenants) ? rawTenants : [];
+  const tenants = rawTenants;
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -40,9 +40,9 @@ export default async function PlatformAdminDashboard() {
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="text-lg font-medium text-zinc-100">
-              {formatPrice(metrics.platformArrMinor)}
+              {metrics.platformArrMinor === null ? '—' : formatPrice(metrics.platformArrMinor)}
             </div>
-            <p className="text-[11px] text-zinc-500 font-normal mt-0.5">Recurring SaaS subscriptions</p>
+            <p className="text-[11px] text-zinc-500 font-normal mt-0.5">{metrics.platformArrMinor === null ? 'Billing not tracked yet' : 'Recurring SaaS subscriptions'}</p>
           </CardContent>
         </Card>
 
@@ -66,7 +66,7 @@ export default async function PlatformAdminDashboard() {
             <div className="text-lg font-medium text-zinc-100">
               {formatPrice(metrics.monthlyGmvMinor)}
             </div>
-            <p className="text-[11px] text-zinc-500 font-normal mt-0.5">Monthly processed volume</p>
+            <p className="text-[11px] text-zinc-500 font-normal mt-0.5">Last 30 days, excluding cancelled</p>
           </CardContent>
         </Card>
 
@@ -76,9 +76,9 @@ export default async function PlatformAdminDashboard() {
           </CardHeader>
           <CardContent className="p-4 pt-0">
             <div className="text-lg font-medium text-emerald-400">
-              {metrics.apiP95LatencyMs} ms
+              {metrics.apiP95LatencyMs === null ? '—' : `${metrics.apiP95LatencyMs} ms`}
             </div>
-            <p className="text-[11px] text-zinc-500 font-normal mt-0.5">Exceeding SLA (&lt; 20ms)</p>
+            <p className="text-[11px] text-zinc-500 font-normal mt-0.5">{metrics.apiP95LatencyMs === null ? 'Latency telemetry not collected yet' : 'Target: < 20ms'}</p>
           </CardContent>
         </Card>
       </div>
@@ -112,11 +112,11 @@ export default async function PlatformAdminDashboard() {
                 <TableRow key={tenant.id}>
                   <TableCell>
                     <div className="text-xs font-normal text-zinc-200">{tenant.name}</div>
-                    <div className="text-[10px] text-zinc-500 font-mono">id: {tenant.slug}</div>
+                    <div className="text-[10px] text-zinc-500 font-mono">slug: {tenant.slug ?? '—'}</div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary" className="text-[10px] uppercase font-mono tracking-wider">
-                      {tenant.plan}
+                      {tenant.plan ?? 'no plan'}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-xs text-zinc-400">
@@ -126,7 +126,7 @@ export default async function PlatformAdminDashboard() {
                     {formatPrice(tenant.monthlyGmvMinor)}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="success" className="text-[10px]">
+                    <Badge variant={tenant.status === 'active' ? 'success' : 'destructive'} className="text-[10px]">
                       {tenant.status}
                     </Badge>
                   </TableCell>

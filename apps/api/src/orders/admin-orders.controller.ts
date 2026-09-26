@@ -8,7 +8,7 @@ import {
   Headers,
   Query,
 } from '@nestjs/common';
-import { OrdersService } from './orders.service';
+import { OrdersService, type OrderStatusUpdate } from './orders.service';
 
 @Controller(['v1/merchant', 'v1/admin'])
 export class AdminOrdersController {
@@ -25,20 +25,10 @@ export class AdminOrdersController {
     };
   }
 
-  @Get('analytics')
-  async getAnalytics(@Headers('x-store-id') headerStoreId?: string, @Query('storeId') queryStoreId?: string) {
-    const storeId = headerStoreId || queryStoreId || 'store_default';
-    const analytics = await this.ordersService.getAnalytics(storeId);
-    return {
-      success: true,
-      data: analytics,
-    };
-  }
-
   @Patch('orders/:id/status')
   async updateStatus(
     @Param('id') id: string,
-    @Body() body: { financialStatus?: string; fulfillmentStatus?: string; orderStatus?: string }
+    @Body() body: OrderStatusUpdate
   ) {
     const updated = await this.ordersService.updateOrderStatus(id, body);
     return {

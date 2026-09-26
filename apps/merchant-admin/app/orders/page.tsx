@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getOrders, bookCourier, updateOrderStatus, formatPrice, verifyWhatsAppOrder, formatWhatsAppUrl, type MerchantOrder } from '@/lib/api';
+import { getOrders, bookCourier, updateOrderStatus, formatPrice, verifyWhatsAppOrder, formatWhatsAppUrl, errorMessage, type MerchantOrder } from '@/lib/api';
+import { ErrorBanner } from '@/components/error-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -17,42 +18,45 @@ export default function MerchantOrdersPage() {
   const [selectedOrderForLabel, setSelectedOrderForLabel] = useState<MerchantOrder | null>(null);
   const [bookingCourierForId, setBookingCourierForId] = useState<string | null>(null);
 
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const data = await getOrders();
-      setOrders(data);
-      setLoading(false);
+      try {
+        setOrders(await getOrders());
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
 
+  const replaceOrder = (updated: MerchantOrder) => {
+    setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+  };
+
   const handleBookCourier = async (orderId: string) => {
     setBookingCourierForId(orderId);
-    const res = await bookCourier(orderId, 'Trax');
-    if (res && res.courierTrackingNumber) {
-      setOrders(prev =>
-        prev.map(o =>
-          o.id === orderId
-            ? {
-                ...o,
-                status: 'in_transit',
-                courierName: res.courierName || 'Trax',
-                courierTrackingNumber: res.courierTrackingNumber,
-                courierStatus: 'booked',
-              }
-            : o
-        )
-      );
+    setError(null);
+    try {
+      replaceOrder(await bookCourier(orderId, 'Trax'));
+    } catch (err) {
+      setError(`Courier booking failed: ${errorMessage(err)}`);
+    } finally {
+      setBookingCourierForId(null);
     }
-    setBookingCourierForId(null);
   };
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
-    await updateOrderStatus(orderId, newStatus);
-    setOrders(prev =>
-      prev.map(o => (o.id === orderId ? { ...o, status: newStatus } : o))
-    );
+    setError(null);
+    try {
+      replaceOrder(await updateOrderStatus(orderId, newStatus));
+    } catch (err) {
+      setError(`Status update failed: ${errorMessage(err)}`);
+    }
   };
 
   const handleWhatsAppVerify = async (order: MerchantOrder) => {
@@ -61,10 +65,12 @@ export default function MerchantOrdersPage() {
     const waUrl = formatWhatsAppUrl(order.customerPhone, msg);
     window.open(waUrl, '_blank', 'noopener,noreferrer');
 
-    await verifyWhatsAppOrder(order.id, 'merchant');
-    setOrders(prev =>
-      prev.map(o => (o.id === order.id ? { ...o, whatsappVerified: true } : o))
-    );
+    setError(null);
+    try {
+      replaceOrder(await verifyWhatsAppOrder(order.id, 'merchant'));
+    } catch (err) {
+      setError(`Could not mark order as verified: ${errorMessage(err)}`);
+    }
   };
 
   // Filter orders by tab and search
@@ -98,6 +104,8 @@ export default function MerchantOrdersPage() {
           </p>
         </div>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* Tabs and Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

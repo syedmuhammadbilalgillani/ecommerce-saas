@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, carts, cartItems, productVariants, products, eq, and } from '@repo/db';
+import { resolveTenantId } from '../db/store-context';
+import { type Database, carts, cartItems, productVariants, eq, and, sql } from '@repo/db';
 
 export interface FormattedCartItem {
   id: string;
@@ -23,145 +24,85 @@ export interface FormattedCart {
   items: FormattedCartItem[];
 }
 
-// In-memory fallback cart state if DB is offline during development
-const MEMORY_CARTS = new Map<string, FormattedCart>();
+const CART_WITH_ITEMS = {
+  items: {
+    with: {
+      variant: {
+        with: {
+          product: true,
+        },
+      },
+    },
+  },
+} as const;
 
 @Injectable()
 export class CartService {
-  private readonly logger = new Logger(CartService.name);
-
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   private generateId(prefix: string): string {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
   }
 
-  async getOrCreateCart(cartId?: string, storeId: string = 'store_default', tenantId: string = 'ten_pilot_01'): Promise<FormattedCart> {
-    const id = cartId || this.generateId('cart');
+  /** Returns the cart, or null if it does not exist. Never creates one. */
+  async getCart(cartId: string): Promise<FormattedCart | null> {
+    const record = await this.db.query.carts.findFirst({
+      where: eq(carts.id, cartId),
+      with: CART_WITH_ITEMS,
+    });
+    return record ? this.formatDbCart(record) : null;
+  }
 
-    try {
-      let cartRecord = await this.db.query.carts.findFirst({
-        where: eq(carts.id, id),
-        with: {
-          items: {
-            with: {
-              variant: {
-                with: {
-                  product: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (!cartRecord) {
-        await this.db.insert(carts).values({
-          id,
-          storeId,
-          tenantId,
-          currency: 'PKR',
-        } as any).onConflictDoNothing();
-
-        cartRecord = await this.db.query.carts.findFirst({
-          where: eq(carts.id, id),
-          with: {
-            items: {
-              with: {
-                variant: {
-                  with: {
-                    product: true,
-                  },
-                },
-              },
-            },
-          },
-        });
-      }
-
-      if (cartRecord) {
-        return this.formatDbCart(cartRecord);
-      }
-    } catch (err: any) {
-      this.logger.warn(`Postgres cart query failed (${err.message}). Using memory cart fallback.`);
+  async getOrCreateCart(cartId?: string, storeId: string = 'store_default'): Promise<FormattedCart> {
+    if (cartId) {
+      const existing = await this.getCart(cartId);
+      if (existing) return existing;
     }
 
-    // Memory Fallback
-    if (!MEMORY_CARTS.has(id)) {
-      MEMORY_CARTS.set(id, {
-        id,
-        storeId,
-        currency: 'PKR',
-        itemCount: 0,
-        subtotalMinor: 0,
-        items: [],
-      });
-    }
-    return MEMORY_CARTS.get(id)!;
+    // Unknown or missing cart id: always mint a server-generated id rather than trusting the client's.
+    const tenantId = await resolveTenantId(this.db, storeId);
+    const id = this.generateId('cart');
+    await this.db.insert(carts).values({ id, storeId, tenantId, currency: 'PKR' });
+
+    return { id, storeId, currency: 'PKR', itemCount: 0, subtotalMinor: 0, items: [] };
   }
 
   async addItem(
     cartId: string | undefined,
     variantId: string,
-    quantity: number = 1,
-    storeId: string = 'store_default',
-    tenantId: string = 'ten_pilot_01'
+    quantity: number,
+    storeId: string = 'store_default'
   ): Promise<FormattedCart> {
-    const activeCart = await this.getOrCreateCart(cartId, storeId, tenantId);
+    const activeCart = await this.getOrCreateCart(cartId, storeId);
 
-    try {
-      // Find variant in DB to get authoritative price & title
-      const variant = await this.db.query.productVariants.findFirst({
-        where: eq(productVariants.id, variantId),
-        with: { product: true },
-      });
+    const variant = await this.db.query.productVariants.findFirst({
+      where: eq(productVariants.id, variantId),
+      with: { product: true },
+    });
 
-      if (variant) {
-        // Check if item already in cart
-        const existingItem = await this.db.query.cartItems.findFirst({
-          where: and(eq(cartItems.cartId, activeCart.id), eq(cartItems.variantId, variantId)),
-        });
-
-        if (existingItem) {
-          await this.db.update(cartItems)
-            .set({ quantity: (existingItem as any).quantity + quantity, updatedAt: new Date() } as any)
-            .where(eq(cartItems.id, existingItem.id));
-        } else {
-          await this.db.insert(cartItems).values({
-            id: this.generateId('ci'),
-            cartId: activeCart.id,
-            variantId,
-            quantity,
-          } as any);
-        }
-
-        return await this.getOrCreateCart(activeCart.id, storeId, tenantId);
-      }
-    } catch (err: any) {
-      this.logger.warn(`Failed to add item to DB cart (${err.message}). Using memory fallback.`);
+    if (!variant || variant.product.storeId !== activeCart.storeId || !variant.product.isPublished) {
+      throw new NotFoundException(`Variant '${variantId}' is not available in this store`);
     }
 
-    // Memory Fallback
-    let item = activeCart.items.find((i) => i.variantId === variantId);
-    if (item) {
-      item.quantity += quantity;
-      item.totalMinor = item.quantity * item.priceMinor;
+    const existingItem = await this.db.query.cartItems.findFirst({
+      where: and(eq(cartItems.cartId, activeCart.id), eq(cartItems.variantId, variantId)),
+    });
+
+    if (existingItem) {
+      await this.db
+        .update(cartItems)
+        .set({ quantity: sql`${cartItems.quantity} + ${quantity}`, updatedAt: new Date() })
+        .where(eq(cartItems.id, existingItem.id));
     } else {
-      activeCart.items.push({
+      await this.db.insert(cartItems).values({
         id: this.generateId('ci'),
+        cartId: activeCart.id,
         variantId,
-        productId: 'prod_01',
-        title: 'Selected Item',
-        variantTitle: 'Standard',
-        sku: 'SKU-ITEM',
-        priceMinor: 249000,
         quantity,
-        totalMinor: quantity * 249000,
       });
     }
 
-    this.recalculateMemoryCart(activeCart);
-    return activeCart;
+    return this.requireCart(activeCart.id);
   }
 
   async updateItemQuantity(cartId: string, itemId: string, quantity: number): Promise<FormattedCart> {
@@ -169,40 +110,28 @@ export class CartService {
       return this.removeItem(cartId, itemId);
     }
 
-    try {
-      await this.db.update(cartItems)
-        .set({ quantity, updatedAt: new Date() } as any)
-        .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
+    await this.db
+      .update(cartItems)
+      .set({ quantity, updatedAt: new Date() })
+      .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
 
-      return await this.getOrCreateCart(cartId);
-    } catch (err: any) {
-      this.logger.warn(`Failed to update item in DB cart (${err.message}). Falling back to memory.`);
-    }
-
-    const memoryCart = await this.getOrCreateCart(cartId);
-    const item = memoryCart.items.find((i) => i.id === itemId);
-    if (item) {
-      item.quantity = quantity;
-      item.totalMinor = item.quantity * item.priceMinor;
-      this.recalculateMemoryCart(memoryCart);
-    }
-    return memoryCart;
+    return this.requireCart(cartId);
   }
 
   async removeItem(cartId: string, itemId: string): Promise<FormattedCart> {
-    try {
-      await this.db.delete(cartItems)
-        .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
+    await this.db
+      .delete(cartItems)
+      .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
 
-      return await this.getOrCreateCart(cartId);
-    } catch (err: any) {
-      this.logger.warn(`Failed to delete item from DB cart (${err.message}). Falling back to memory.`);
+    return this.requireCart(cartId);
+  }
+
+  private async requireCart(cartId: string): Promise<FormattedCart> {
+    const cart = await this.getCart(cartId);
+    if (!cart) {
+      throw new NotFoundException(`Cart '${cartId}' not found`);
     }
-
-    const memoryCart = await this.getOrCreateCart(cartId);
-    memoryCart.items = memoryCart.items.filter((i) => i.id !== itemId);
-    this.recalculateMemoryCart(memoryCart);
-    return memoryCart;
+    return cart;
   }
 
   private formatDbCart(record: any): FormattedCart {
@@ -240,10 +169,5 @@ export class CartService {
       subtotalMinor,
       items,
     };
-  }
-
-  private recalculateMemoryCart(cart: FormattedCart) {
-    cart.subtotalMinor = cart.items.reduce((sum, item) => sum + item.totalMinor, 0);
-    cart.itemCount = cart.items.reduce((sum, item) => sum + item.quantity, 0);
   }
 }

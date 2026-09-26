@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getCollections, createCollection, type StoreCollection } from '@/lib/api';
+import { getCollections, createCollection, errorMessage, type StoreCollection } from '@/lib/api';
+import { ErrorBanner } from '@/components/error-banner';
+import { slugify } from '@/lib/slug';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,15 +19,22 @@ export default function MerchantCollectionsPage() {
   // Form State
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [description, setDescription] = useState('');
   const [collectionType, setCollectionType] = useState('manual');
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const data = await getCollections();
-      setCollections(Array.isArray(data) ? data : []);
-      setLoading(false);
+      try {
+        setCollections(await getCollections());
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -35,23 +44,27 @@ export default function MerchantCollectionsPage() {
     if (!title) return;
 
     const payload = {
-      title,
-      slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''),
+      title: title.trim(),
+      slug: slugify(slug || title),
       description,
       collectionType,
     };
 
-    const newCol = await createCollection(payload);
-    if (newCol) {
+    setSaving(true);
+    setError(null);
+    try {
+      const newCol = await createCollection(payload);
       setCollections(prev => [newCol, ...prev]);
-    } else {
-      setCollections(prev => [{ id: `col_${Date.now()}`, ...payload }, ...prev]);
+      setIsAddingCollection(false);
+      setTitle('');
+      setSlug('');
+      setSlugEdited(false);
+      setDescription('');
+    } catch (err) {
+      setError(`Could not create collection: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
     }
-
-    setIsAddingCollection(false);
-    setTitle('');
-    setSlug('');
-    setDescription('');
   };
 
   return (
@@ -72,6 +85,8 @@ export default function MerchantCollectionsPage() {
         </Button>
       </div>
 
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+
       {/* Create Collection Drawer */}
       {isAddingCollection && (
         <Card className="p-5 space-y-4">
@@ -90,7 +105,7 @@ export default function MerchantCollectionsPage() {
                   value={title}
                   onChange={(e) => {
                     setTitle(e.target.value);
-                    if (!slug) setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                    if (!slugEdited) setSlug(slugify(e.target.value));
                   }}
                   required
                 />
@@ -102,7 +117,10 @@ export default function MerchantCollectionsPage() {
                   id="colSlug"
                   placeholder="eid-drop-2026"
                   value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
+                  onChange={(e) => {
+                    setSlug(e.target.value);
+                    setSlugEdited(e.target.value !== '');
+                  }}
                   required
                 />
               </div>
@@ -141,7 +159,7 @@ export default function MerchantCollectionsPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" size="sm" className="text-xs font-normal">
+              <Button type="submit" size="sm" disabled={saving} className="text-xs font-normal">
                 Save Collection
               </Button>
             </div>

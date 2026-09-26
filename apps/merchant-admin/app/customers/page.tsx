@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getCustomers, getCustomerById, formatPrice, formatWhatsAppUrl, type MerchantCustomer } from '@/lib/api';
+import { getCustomers, getCustomerById, formatPrice, formatWhatsAppUrl, errorMessage, type MerchantCustomer } from '@/lib/api';
+import { ErrorBanner } from '@/components/error-banner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -13,15 +14,20 @@ export default function MerchantCustomersPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<MerchantCustomer | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const data = await getCustomers();
-      const list = Array.isArray(data) ? data : [];
-      setCustomers(list);
-      setFiltered(list);
-      setLoading(false);
+      try {
+        const list = await getCustomers();
+        setCustomers(list);
+        setFiltered(list);
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -43,8 +49,12 @@ export default function MerchantCustomersPage() {
   }, [search, customers]);
 
   const handleSelectCustomer = async (cust: MerchantCustomer) => {
-    const detail = await getCustomerById(cust.id);
-    setSelectedCustomer(detail || cust);
+    setSelectedCustomer(cust);
+    try {
+      setSelectedCustomer(await getCustomerById(cust.id));
+    } catch (err) {
+      setError(`Could not load order history: ${errorMessage(err)}`);
+    }
   };
 
   // Metrics
@@ -71,6 +81,8 @@ export default function MerchantCustomersPage() {
           />
         </div>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* 3 Calm CRM KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

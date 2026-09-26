@@ -11,8 +11,10 @@ import {
   verifyWhatsAppOrder,
   formatWhatsAppUrl,
   formatPrice,
+  errorMessage,
   type MerchantOrder,
 } from '@/lib/api';
+import { ErrorBanner } from '@/components/error-banner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -32,44 +34,50 @@ export default function OrderDetailPage() {
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [copiedTracking, setCopiedTracking] = useState(false);
 
+  const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
   useEffect(() => {
     async function load() {
       if (!id) return;
       setLoading(true);
-      const data = await getOrderById(id);
-      if (data) {
+      try {
+        const data = await getOrderById(id);
         setOrder(data);
         setNoteText(data.notes || '');
+      } catch (err) {
+        const message = errorMessage(err);
+        if (/not found/i.test(message)) setNotFound(true);
+        else setError(message);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [id]);
 
+  const runAction = async (label: string, action: () => Promise<MerchantOrder>) => {
+    setError(null);
+    try {
+      const updated = await action();
+      setOrder(updated);
+      return updated;
+    } catch (err) {
+      setError(`${label}: ${errorMessage(err)}`);
+      return null;
+    }
+  };
+
   const handleBookCourier = async () => {
     if (!order) return;
     setBookingCourier(true);
-    const res = await bookCourier(order.id, 'Trax');
-    if (res && res.courierTrackingNumber) {
-      setOrder((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: 'in_transit',
-              courierName: res.courierName || 'Trax',
-              courierTrackingNumber: res.courierTrackingNumber,
-              courierStatus: 'booked',
-            }
-          : null
-      );
-    }
+    await runAction('Courier booking failed', () => bookCourier(order.id, 'Trax'));
     setBookingCourier(false);
   };
 
   const handleStatusChange = async (newStatus: string) => {
     if (!order) return;
-    await updateOrderStatus(order.id, newStatus);
-    setOrder((prev) => (prev ? { ...prev, status: newStatus } : null));
+    await runAction('Status update failed', () => updateOrderStatus(order.id, newStatus));
   };
 
   const handleWhatsAppVerify = async () => {
@@ -79,15 +87,14 @@ export default function OrderDetailPage() {
     const waUrl = formatWhatsAppUrl(order.customerPhone, msg);
     window.open(waUrl, '_blank', 'noopener,noreferrer');
 
-    await verifyWhatsAppOrder(order.id, 'merchant');
-    setOrder((prev) => (prev ? { ...prev, whatsappVerified: true } : null));
+    await runAction('Could not mark order as verified', () => verifyWhatsAppOrder(order.id, 'merchant'));
   };
 
   const handleSaveNotes = async () => {
     if (!order) return;
     setSavingNote(true);
-    await updateOrderNotes(order.id, noteText);
-    setOrder((prev) => (prev ? { ...prev, notes: noteText } : null));
+    const updated = await runAction('Saving notes failed', () => updateOrderNotes(order.id, noteText));
+    if (updated) setNoteText(updated.notes || '');
     setSavingNote(false);
   };
 
@@ -117,8 +124,8 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <div className="max-w-5xl mx-auto py-12 text-center space-y-3">
-        <h2 className="text-base font-medium text-foreground">Order Not Found</h2>
-        <p className="text-xs text-muted-foreground">The requested order could not be located.</p>
+        <h2 className="text-base font-medium text-foreground">{notFound ? 'Order Not Found' : 'Could not load order'}</h2>
+        <p className="text-xs text-muted-foreground">{notFound ? 'The requested order could not be located.' : error}</p>
         <Link href="/orders">
           <Button size="sm" variant="outline" className="text-xs">
             ← Back to Orders
@@ -135,6 +142,8 @@ export default function OrderDetailPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
+
       {/* Top Breadcrumb & Actions Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
         <div className="space-y-1">
@@ -451,7 +460,7 @@ export default function OrderDetailPage() {
                   <div>
                     <div className="text-foreground font-medium">Order Placed by Customer</div>
                     <div className="text-[11px] text-muted-foreground">
-                      Customer checked out via Cash on Delivery ({order.shippingCity})
+                      Customer checked out via Cash on Delivery ({order.customerCity})
                     </div>
                   </div>
                 </div>

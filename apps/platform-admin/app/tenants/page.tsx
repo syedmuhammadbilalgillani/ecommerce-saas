@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getPlatformTenants, formatPrice, type PlatformTenant } from '@/lib/api';
+import { getPlatformTenants, createTenant, setTenantStatus, formatPrice, errorMessage, type PlatformTenant } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 export default function TenantsManagementPage() {
   const [tenants, setTenants] = useState<PlatformTenant[]>([]);
@@ -17,47 +21,56 @@ export default function TenantsManagementPage() {
   // Form State
   const [tenantName, setTenantName] = useState('');
   const [slug, setSlug] = useState('');
-  const [plan, setPlan] = useState<'starter' | 'growth' | 'scale' | 'enterprise'>('growth');
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const data = await getPlatformTenants();
-      setTenants(Array.isArray(data) ? data : []);
-      setLoading(false);
+      try {
+        setTenants(await getPlatformTenants());
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
 
-  const handleCreateTenant = (e: React.FormEvent) => {
+  const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!tenantName) return;
+    if (!tenantName.trim()) return;
 
-    const newTenant: PlatformTenant = {
-      id: `tenant_${Date.now()}`,
-      name: tenantName,
-      slug: slug || tenantName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      plan,
-      status: 'active',
-      createdAt: new Date().toISOString().split('T')[0] || '2026-09-26',
-      storesCount: 1,
-      monthlyGmvMinor: 0,
-    };
-
-    setTenants(prev => [newTenant, ...prev]);
-    setIsProvisioning(false);
-    setTenantName('');
-    setSlug('');
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await createTenant({ name: tenantName.trim(), slug: slugify(slug || tenantName) });
+      setTenants(prev => [created, ...prev]);
+      setIsProvisioning(false);
+      setTenantName('');
+      setSlug('');
+      setSlugEdited(false);
+    } catch (err) {
+      setError(`Could not create tenant: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const toggleTenantStatus = (id: string) => {
-    setTenants(prev =>
-      prev.map(t =>
-        t.id === id
-          ? { ...t, status: t.status === 'active' ? 'suspended' : 'active' }
-          : t
-      )
-    );
+  const toggleTenantStatus = async (tenant: PlatformTenant) => {
+    setUpdatingId(tenant.id);
+    setError(null);
+    try {
+      const updated = await setTenantStatus(tenant.id, tenant.status === 'active' ? 'suspended' : 'active');
+      setTenants(prev => prev.map(t => (t.id === updated.id ? updated : t)));
+    } catch (err) {
+      setError(`Could not update tenant status: ${errorMessage(err)}`);
+    } finally {
+      setUpdatingId(null);
+    }
   };
 
   return (
@@ -78,6 +91,12 @@ export default function TenantsManagementPage() {
         </Button>
       </div>
 
+      {error && (
+        <div role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          {error}
+        </div>
+      )}
+
       {/* Provisioning Drawer */}
       {isProvisioning && (
         <Card className="bg-zinc-900/30 border-zinc-800/80 p-5 space-y-4">
@@ -87,7 +106,7 @@ export default function TenantsManagementPage() {
           </div>
 
           <form onSubmit={handleCreateTenant} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label htmlFor="tName">Brand / Tenant Name</Label>
                 <Input
@@ -96,7 +115,7 @@ export default function TenantsManagementPage() {
                   value={tenantName}
                   onChange={(e) => {
                     setTenantName(e.target.value);
-                    if (!slug) setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                    if (!slugEdited) setSlug(slugify(e.target.value));
                   }}
                   required
                 />
@@ -108,25 +127,14 @@ export default function TenantsManagementPage() {
                   id="tSlug"
                   placeholder="alkaram"
                   value={slug}
-                  onChange={(e) => setSlug(e.target.value)}
+                  onChange={(e) => {
+                    setSlug(e.target.value);
+                    setSlugEdited(e.target.value !== '');
+                  }}
                   required
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="tPlan">SaaS Subscription Plan</Label>
-                <select
-                  id="tPlan"
-                  value={plan}
-                  onChange={(e) => setPlan(e.target.value as any)}
-                  className="flex h-9 w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-1 text-xs text-zinc-200 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-zinc-600"
-                >
-                  <option value="starter">Starter (1 Store, 50 orders/day)</option>
-                  <option value="growth">Growth (3 Stores, 500 orders/day)</option>
-                  <option value="scale">Scale (Unlimited, 5,000 orders/day)</option>
-                  <option value="enterprise">Enterprise (Custom SLA & Dedicated DB)</option>
-                </select>
-              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800/70">
@@ -139,8 +147,8 @@ export default function TenantsManagementPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" size="sm" className="text-xs font-normal">
-                Provision Tenant Fleet
+              <Button type="submit" size="sm" disabled={saving} className="text-xs font-normal">
+                {saving ? 'Provisioning...' : 'Provision Tenant'}
               </Button>
             </div>
           </form>
@@ -173,12 +181,12 @@ export default function TenantsManagementPage() {
                 <TableRow key={t.id}>
                   <TableCell>
                     <div className="text-xs font-normal text-zinc-200">{t.name}</div>
-                    <div className="text-[10px] text-zinc-500 font-mono">slug: {t.slug}</div>
+                    <div className="text-[10px] text-zinc-500 font-mono">slug: {t.slug ?? '—'}</div>
                   </TableCell>
 
                   <TableCell>
                     <Badge variant="secondary" className="text-[10px] uppercase font-mono">
-                      {t.plan}
+                      {t.plan ?? 'no plan'}
                     </Badge>
                   </TableCell>
 
@@ -211,7 +219,8 @@ export default function TenantsManagementPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => toggleTenantStatus(t.id)}
+                        onClick={() => toggleTenantStatus(t)}
+                        disabled={updatingId === t.id}
                         className="h-7 text-[11px] px-2 text-zinc-400 border-zinc-700"
                       >
                         {t.status === 'active' ? 'Suspend' : 'Activate'}

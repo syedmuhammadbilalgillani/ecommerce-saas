@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getDiscounts, createDiscount, formatPrice, type MerchantDiscount } from '@/lib/api';
+import { getDiscounts, createDiscount, formatPrice, errorMessage, type MerchantDiscount } from '@/lib/api';
+import { ErrorBanner } from '@/components/error-banner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,13 +24,19 @@ export default function MerchantDiscountsPage() {
   const [minRequirementType, setMinRequirementType] = useState<'none' | 'min_subtotal'>('none');
   const [minSubtotal, setMinSubtotal] = useState('2000');
   const [usageLimit, setUsageLimit] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const data = await getDiscounts();
-      setDiscounts(Array.isArray(data) ? data : []);
-      setLoading(false);
+      try {
+        setDiscounts(await getDiscounts());
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -55,27 +62,22 @@ export default function MerchantDiscountsPage() {
       isActive: true,
     };
 
-    const created = await createDiscount(payload);
-    if (created) {
+    setSaving(true);
+    setError(null);
+    try {
+      const created = await createDiscount(payload);
       setDiscounts((prev) => [created, ...prev]);
-    } else {
-      setDiscounts((prev) => [
-        {
-          id: `disc_${Date.now()}`,
-          timesUsed: 0,
-          appliesTo: 'all_products',
-          ...payload,
-        } as MerchantDiscount,
-        ...prev,
-      ]);
+      setIsCreating(false);
+      setCode('');
+      setTitle('');
+      setDescription('');
+      setValue('10');
+      setUsageLimit('');
+    } catch (err) {
+      setError(`Could not create discount: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
     }
-
-    setIsCreating(false);
-    setCode('');
-    setTitle('');
-    setDescription('');
-    setValue('10');
-    setUsageLimit('');
   };
 
   return (
@@ -95,6 +97,8 @@ export default function MerchantDiscountsPage() {
           {isCreating ? 'Close Form' : '+ Create Discount'}
         </Button>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* Shopify-Style 2-Column Discount Studio */}
       {isCreating && (
@@ -272,7 +276,7 @@ export default function MerchantDiscountsPage() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" className="text-xs font-normal h-8">
+                  <Button type="submit" disabled={saving} className="text-xs font-normal h-8">
                     Save Discount Rule
                   </Button>
                 </div>

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
 import { PlatformService } from './platform.service';
 
 @Controller('v1/platform')
@@ -24,8 +24,17 @@ export class PlatformController {
   }
 
   @Post('tenants')
-  async createTenant(@Body() body: { name: string; slug: string; plan?: string }) {
+  async createTenant(@Body() body: { name: string; slug: string }) {
     const data = await this.platformService.createTenant(body);
+    return {
+      success: true,
+      data,
+    };
+  }
+
+  @Patch('tenants/:id/status')
+  async setTenantStatus(@Param('id') id: string, @Body() body: { status: string }) {
+    const data = await this.platformService.setTenantStatus(id, body?.status);
     return {
       success: true,
       data,

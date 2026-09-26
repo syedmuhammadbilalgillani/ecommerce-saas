@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getStorefrontCollection, getStorefrontProducts, formatPrice } from '@/lib/api';
+import { getStorefrontCollection, formatPrice } from '@/lib/api';
 
 export const revalidate = 60; // 60s ISR cache
 
@@ -10,19 +10,13 @@ export default async function CollectionPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const [collection, allProducts] = await Promise.all([
-    getStorefrontCollection(slug),
-    getStorefrontProducts(),
-  ]);
+  const collection = await getStorefrontCollection(slug);
 
   if (!collection) {
     notFound();
   }
 
-  // If collection has resolved collectionProducts, use them; otherwise fallback to matching category or all
-  const products = collection.collectionProducts && collection.collectionProducts.length > 0
-    ? collection.collectionProducts.map(cp => cp.product)
-    : allProducts;
+  const products = (collection.collectionProducts ?? []).map(cp => cp.product);
 
   return (
     <div className="container" style={{ padding: '2rem 1rem' }}>

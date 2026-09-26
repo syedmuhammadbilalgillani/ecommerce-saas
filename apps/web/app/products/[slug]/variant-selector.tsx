@@ -6,7 +6,7 @@ import { useCart } from '../../../lib/cart-context';
 
 export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
   const [selectedId, setSelectedId] = useState(variants[0]?.id || '');
-  const { addItem, isLoading } = useCart();
+  const { addItem, isLoading, error } = useCart();
 
   const activeVariant = variants.find((v) => v.id === selectedId) || variants[0];
 
@@ -16,6 +16,8 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
   };
 
   if (!activeVariant) return null;
+
+  const inStock = activeVariant.stock > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -31,9 +33,15 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
             </span>
           )}
         </div>
-        <p style={{ color: 'var(--accent)', fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem' }}>
-          ✓ In Stock ({activeVariant.stock} units available) • Ships within 24 hours
-        </p>
+        {inStock ? (
+          <p style={{ color: 'var(--accent)', fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem' }}>
+            ✓ In Stock{activeVariant.stock <= 5 ? ` (only ${activeVariant.stock} left)` : ''} • Ships within 24 hours
+          </p>
+        ) : (
+          <p style={{ color: '#ef4444', fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem' }}>
+            Sold out
+          </p>
+        )}
       </div>
 
       {/* Variant Pills */}
@@ -71,7 +79,7 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <button
           onClick={handleAddToCart}
-          disabled={isLoading}
+          disabled={isLoading || !inStock}
           className="btn"
           style={{
             padding: '1rem',
@@ -86,12 +94,12 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
           }}
         >
           <span>🛒</span>
-          <span>{isLoading ? 'Adding to Cart...' : 'Add to Cart (Instant)'}</span>
+          <span>{!inStock ? 'Sold Out' : isLoading ? 'Adding to Cart...' : 'Add to Cart'}</span>
         </button>
 
         <button
           onClick={handleAddToCart}
-          disabled={isLoading}
+          disabled={isLoading || !inStock}
           className="btn btn-secondary"
           style={{
             padding: '0.85rem',
@@ -103,6 +111,12 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
         >
           🚀 Buy with Cash on Delivery (COD)
         </button>
+
+        {error && (
+          <div role="alert" style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center' }}>
+            {error}
+          </div>
+        )}
 
         <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
           🔒 Pay upon Delivery • 7 Days Hassle-Free Exchange

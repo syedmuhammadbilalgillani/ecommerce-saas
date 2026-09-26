@@ -7,11 +7,14 @@ import {
   getCategories,
   getCollections,
   formatPrice,
+  errorMessage,
   type MerchantProduct,
   type TaxonomyCategory,
   type StoreCollection,
 } from '@/lib/api';
 import { Card } from '@/components/ui/card';
+import { ErrorBanner } from '@/components/error-banner';
+import { slugify } from '@/lib/slug';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,12 +44,15 @@ export default function MerchantProductsPage() {
   // New Product Form State
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [description, setDescription] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('cat_tshirts');
-  const [productType, setProductType] = useState('T-Shirt');
-  const [vendor, setVendor] = useState('Outfitters PK');
-  const [tagsInput, setTagsInput] = useState('cotton, essential, summer');
-  const [selectedCollections, setSelectedCollections] = useState<string[]>(['col_summer', 'col_mens']);
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [productType, setProductType] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [tagsInput, setTagsInput] = useState('');
+  const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
 
   // Dynamic Shopify-style options (e.g., Size, Color)
   const [options, setOptions] = useState<DynamicOption[]>([
@@ -60,15 +66,20 @@ export default function MerchantProductsPage() {
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const [prods, cats, cols] = await Promise.all([
-        getMerchantProducts(),
-        getCategories(),
-        getCollections(),
-      ]);
-      setProducts(Array.isArray(prods) ? prods : []);
-      setCategories(Array.isArray(cats) ? cats : []);
-      setCollections(Array.isArray(cols) ? cols : []);
-      setLoading(false);
+      try {
+        const [prods, cats, cols] = await Promise.all([
+          getMerchantProducts(),
+          getCategories(),
+          getCollections(),
+        ]);
+        setProducts(prods);
+        setCategories(cats);
+        setCollections(cols);
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -115,7 +126,8 @@ export default function MerchantProductsPage() {
   const handleOptionNameChange = (idx: number, name: string) => {
     setOptions(prev => {
       const copy = [...prev];
-      copy[idx] = { ...copy[idx], name };
+      const current = copy[idx];
+      if (current) copy[idx] = { ...current, name };
       return copy;
     });
   };
@@ -124,7 +136,8 @@ export default function MerchantProductsPage() {
     setOptions(prev => {
       const copy = [...prev];
       const parsedValues = valStr.split(',').map(s => s.trim()).filter(Boolean);
-      copy[idx] = { ...copy[idx], valuesInput: valStr, values: parsedValues };
+      const current = copy[idx];
+      if (current) copy[idx] = { ...current, valuesInput: valStr, values: parsedValues };
       return copy;
     });
   };
@@ -140,7 +153,8 @@ export default function MerchantProductsPage() {
   const handleVariantFieldChange = (idx: number, field: keyof GeneratedVariant, val: string) => {
     setVariantMatrix(prev => {
       const copy = [...prev];
-      copy[idx] = { ...copy[idx], [field]: val };
+      const current = copy[idx];
+      if (current) copy[idx] = { ...current, [field]: val };
       return copy;
     });
   };
@@ -153,19 +167,19 @@ export default function MerchantProductsPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title) return;
+    if (!title.trim()) return;
 
     const payload = {
-      title,
-      slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, ''),
+      title: title.trim(),
+      slug: slugify(slug || title),
       description,
-      categoryId: selectedCategory,
-      productType,
-      vendor,
+      categoryId: selectedCategory || null,
+      productType: productType || null,
+      vendor: vendor || null,
       tags: tagsInput.split(',').map(t => t.trim()).filter(Boolean),
       collectionIds: selectedCollections,
       isPublished: true,
-      options: options.map(o => ({ name: o.name, values: o.values })),
+      options: options.filter(o => o.name.trim() && o.values.length > 0).map(o => ({ name: o.name.trim(), values: o.values })),
       variants: variantMatrix.map(v => ({
         title: v.title,
         sku: v.sku,
@@ -174,39 +188,21 @@ export default function MerchantProductsPage() {
       })),
     };
 
-    const newProd = await createMerchantProduct(payload);
-    if (newProd) {
+    setSaving(true);
+    setError(null);
+    try {
+      const newProd = await createMerchantProduct(payload);
       setProducts(prev => [newProd, ...prev]);
-    } else {
-      const localCat = categories.find(c => c.id === selectedCategory);
-      const localProd: MerchantProduct = {
-        id: `prod_${Date.now()}`,
-        storeId: 'store_default',
-        categoryId: selectedCategory,
-        category: localCat || null,
-        title: payload.title,
-        slug: payload.slug,
-        description: payload.description,
-        productType: payload.productType,
-        vendor: payload.vendor,
-        tags: payload.tags,
-        options: payload.options,
-        isPublished: true,
-        variants: payload.variants.map((v, i) => ({
-          id: `var_${Date.now()}_${i}`,
-          title: v.title,
-          sku: v.sku,
-          priceMinor: v.priceMinor,
-          stock: v.stock,
-        })),
-      };
-      setProducts(prev => [localProd, ...prev]);
+      setIsAddingProduct(false);
+      setTitle('');
+      setSlug('');
+      setSlugEdited(false);
+      setDescription('');
+    } catch (err) {
+      setError(`Could not save product: ${errorMessage(err)}`);
+    } finally {
+      setSaving(false);
     }
-
-    setIsAddingProduct(false);
-    setTitle('');
-    setSlug('');
-    setDescription('');
   };
 
   return (
@@ -226,6 +222,8 @@ export default function MerchantProductsPage() {
           {isAddingProduct ? 'Close Form' : '+ Add New Product'}
         </Button>
       </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* Shopify-Style 2-Column Product Creation Studio */}
       {isAddingProduct && (
@@ -248,7 +246,7 @@ export default function MerchantProductsPage() {
                       value={title}
                       onChange={(e) => {
                         setTitle(e.target.value);
-                        if (!slug) setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+                        if (!slugEdited) setSlug(slugify(e.target.value));
                       }}
                       required
                     />
@@ -260,7 +258,10 @@ export default function MerchantProductsPage() {
                       id="slug"
                       placeholder="classic-oxford-cotton-shirt"
                       value={slug}
-                      onChange={(e) => setSlug(e.target.value)}
+                      onChange={(e) => {
+                        setSlug(e.target.value);
+                        setSlugEdited(e.target.value !== '');
+                      }}
                     />
                   </div>
 
@@ -397,6 +398,7 @@ export default function MerchantProductsPage() {
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   className="w-full h-8 rounded bg-card border border-border text-xs text-foreground px-2 focus:outline-none"
                 >
+                  <option value="">Uncategorized</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} ({c.fullName.split('>')[0]?.trim() || c.name})
@@ -479,8 +481,8 @@ export default function MerchantProductsPage() {
 
               {/* Publish Action Button */}
               <div className="pt-2">
-                <Button type="submit" className="w-full text-xs font-normal h-9">
-                  Publish Product to Storefront
+                <Button type="submit" disabled={saving} className="w-full text-xs font-normal h-9">
+                  {saving ? 'Publishing...' : 'Publish Product to Storefront'}
                 </Button>
               </div>
             </div>
@@ -492,7 +494,6 @@ export default function MerchantProductsPage() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-foreground">Catalog Inventory ({products.length} Products)</h2>
-          <span className="text-xs text-muted-foreground font-mono">Store: Outfitters PK</span>
         </div>
 
         <div className="rounded-lg border border-border overflow-hidden bg-card">

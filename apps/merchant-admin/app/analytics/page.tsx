@@ -10,11 +10,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { getAnalytics, formatPrice, type MerchantAnalytics } from '@/lib/api';
+import { getAnalytics, formatPrice, errorMessage, type MerchantAnalytics } from '@/lib/api';
+import { ErrorBanner } from '@/components/error-banner';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
@@ -26,7 +26,6 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import {
-  TrendingUp,
   DollarSign,
   ShoppingBag,
   Users,
@@ -44,13 +43,15 @@ export default function MerchantAnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [timeRange, setTimeRange] = useState<string>('30d');
+  const [error, setError] = useState<string | null>(null);
   const [activeMetricTab, setActiveMetricTab] = useState<'sales' | 'orders' | 'aov'>('sales');
 
   const fetchTelemetry = async () => {
     try {
-      const data = await getAnalytics();
-      setAnalytics(data);
+      setError(null);
+      setAnalytics(await getAnalytics());
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -84,13 +85,24 @@ export default function MerchantAnalyticsPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `POSflow_Analytics_Report_${timeRange}.csv`);
+    link.setAttribute('download', `POSflow_Analytics_Report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   // Loading Skeleton State
+  if (!loading && !analytics) {
+    return (
+      <div className="space-y-4 max-w-6xl pb-12">
+        <ErrorBanner message={error ?? 'No analytics data returned.'} />
+        <Button variant="outline" size="sm" className="text-xs" onClick={handleRefresh}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   if (loading || !analytics || !mounted) {
     return (
       <div className="space-y-6 max-w-6xl pb-12">
@@ -137,14 +149,11 @@ export default function MerchantAnalyticsPage() {
   // Format Recharts Telemetry Data
   const chartData = analytics.salesOverTime.map((d) => {
     const sales = Math.round(d.salesMinor / 100);
-    // Shopify-style comparative baseline (simulating previous cycle overlay)
-    const previousSales = Math.round(sales * 0.85);
     const aov = d.ordersCount > 0 ? Math.round(sales / d.ordersCount) : 0;
     return {
       date: d.date,
       formattedDate: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       sales,
-      previousSales,
       orders: d.ordersCount,
       aov,
     };
@@ -155,10 +164,6 @@ export default function MerchantAnalyticsPage() {
     sales: {
       label: 'Current Period (PKR)',
       color: 'hsl(var(--chart-1))',
-    },
-    previousSales: {
-      label: 'Previous Period (PKR)',
-      color: 'hsl(var(--muted-foreground))',
     },
     orders: {
       label: 'Completed Orders',
@@ -201,15 +206,7 @@ export default function MerchantAnalyticsPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Shadcn Tabs for Time Range */}
-          <Tabs value={timeRange} onValueChange={setTimeRange}>
-            <TabsList>
-              <TabsTrigger value="today">Today</TabsTrigger>
-              <TabsTrigger value="7d">7 Days</TabsTrigger>
-              <TabsTrigger value="30d">30 Days</TabsTrigger>
-              <TabsTrigger value="90d">90 Days</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <span className="text-[11px] text-muted-foreground">All-time data</span>
 
           <Button
             variant="outline"
@@ -245,13 +242,6 @@ export default function MerchantAnalyticsPage() {
           <CardContent className="p-4 pt-0">
             <div className="text-xl font-medium text-foreground tracking-tight">
               {formatPrice(analytics.grossSalesMinor)}
-            </div>
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <Badge variant="success" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
-                <TrendingUp className="w-3 h-3" />
-                +14.8%
-              </Badge>
-              <span className="text-[11px] text-muted-foreground font-normal">vs previous period</span>
             </div>
             <p className="text-[11px] text-muted-foreground font-normal mt-2 border-t border-border/50 pt-1.5">
               Net Sales: <span className="text-foreground">{formatPrice(analytics.netSalesMinor)}</span> (Discounts: -{formatPrice(analytics.discountsMinor)})
@@ -291,13 +281,7 @@ export default function MerchantAnalyticsPage() {
             <div className="text-xl font-medium text-foreground tracking-tight">
               {analytics.repeatCustomersRate}%
             </div>
-            <div className="flex items-center gap-1.5 mt-1.5">
-              <Badge variant="success" className="text-[10px] px-1.5 py-0 h-4 gap-0.5">
-                <TrendingUp className="w-3 h-3" />
-                Healthy LTV
-              </Badge>
-              <span className="text-[11px] text-muted-foreground font-normal">Shopify benchmark: 27%</span>
-            </div>
+            <p className="text-[11px] text-muted-foreground font-normal mt-1.5">Customers with 2+ orders</p>
             <p className="text-[11px] text-muted-foreground font-normal mt-2 border-t border-border/50 pt-1.5">
               Total Buyers: <span className="text-foreground">{analytics.totalCustomers} customer profiles</span>
             </p>
@@ -344,10 +328,6 @@ export default function MerchantAnalyticsPage() {
               <div className="text-xs text-muted-foreground font-normal">Total Sales</div>
               <div className="text-lg font-medium text-foreground tracking-tight mt-1">
                 {formatPrice(analytics.grossSalesMinor)}
-              </div>
-              <div className="flex items-center gap-1 mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-                <TrendingUp className="w-3 h-3" />
-                <span>+14.8% vs last month</span>
               </div>
             </button>
 
@@ -401,10 +381,6 @@ export default function MerchantAnalyticsPage() {
                     <stop offset="5%" stopColor="var(--color-sales)" stopOpacity={0.4} />
                     <stop offset="95%" stopColor="var(--color-sales)" stopOpacity={0.02} />
                   </linearGradient>
-                  <linearGradient id="fillPreviousSales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="var(--color-previousSales)" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="var(--color-previousSales)" stopOpacity={0.0} />
-                  </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border/40" />
                 <XAxis
@@ -428,20 +404,10 @@ export default function MerchantAnalyticsPage() {
                       labelFormatter={(value) => `Date: ${value}`}
                       formatter={(val, name) => [
                         `Rs ${Number(val).toLocaleString()}`,
-                        name === 'sales' ? 'Current Period' : 'Previous Period',
+                        'Sales',
                       ]}
                     />
                   }
-                />
-                {/* Previous Period Comparative Baseline (Shopify Overlay) */}
-                <Area
-                  dataKey="previousSales"
-                  type="natural"
-                  fill="url(#fillPreviousSales)"
-                  stroke="var(--color-previousSales)"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 4"
-                  dot={false}
                 />
                 {/* Current Active Sales Line */}
                 <Area
@@ -530,11 +496,7 @@ export default function MerchantAnalyticsPage() {
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-              Current Selected Period
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2.5 h-0.5 border-t border-dashed border-muted-foreground inline-block" />
-              Previous Period Comparison (Dashed)
+              Daily sales
             </span>
           </div>
           <span className="font-mono text-[11px]">Timezone: Asia/Karachi (PKT)</span>

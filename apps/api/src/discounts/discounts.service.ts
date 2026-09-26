@@ -1,5 +1,6 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
+import type { DbExecutor } from '../db/store-context';
 import { type Database, discounts, eq, and, sql } from '@repo/db';
 
 export interface ValidateDiscountResult {
@@ -128,6 +129,19 @@ export class DiscountsService {
       throw new BadRequestException('Code, Title, and Value are required');
     }
 
+    const value = Number(dto.value);
+    if (dto.discountType === 'percentage') {
+      if (!Number.isInteger(value) || value < 1 || value > 100) {
+        throw new BadRequestException('Percentage discounts must be a whole number between 1 and 100');
+      }
+    } else if (dto.discountType === 'fixed_amount') {
+      if (!Number.isInteger(value) || value < 1) {
+        throw new BadRequestException('Fixed discounts must be a positive amount in minor units');
+      }
+    } else if (dto.discountType !== 'free_shipping') {
+      throw new BadRequestException('discountType must be percentage, fixed_amount or free_shipping');
+    }
+
     const code = dto.code.trim().toUpperCase();
     const id = this.generateId('disc');
 
@@ -141,7 +155,7 @@ export class DiscountsService {
         title: dto.title.trim(),
         description: dto.description || null,
         discountType: dto.discountType,
-        value: Number(dto.value),
+        value: dto.discountType === 'free_shipping' ? 0 : value,
         appliesTo: dto.appliesTo || 'all_products',
         minRequirementType: dto.minRequirementType || 'none',
         minSubtotalMinor: dto.minSubtotalMinor ? Number(dto.minSubtotalMinor) : 0,
@@ -154,8 +168,8 @@ export class DiscountsService {
     return created[0];
   }
 
-  async incrementUsage(code: string) {
-    await this.db
+  async incrementUsage(code: string, executor: DbExecutor = this.db) {
+    await executor
       .update(discounts)
       .set({
         timesUsed: sql`${discounts.timesUsed} + 1`,

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, orders, orderItems, carts, cartItems, productVariants, eq, and, sql } from '@repo/db';
+import { resolveTenantId, type DbExecutor } from '../db/store-context';
+import { type Database, orders, orderItems, cartItems, productVariants, eq, desc, sql } from '@repo/db';
 import { CartService } from '../cart/cart.service';
 import { DiscountsService } from '../discounts/discounts.service';
 import { CustomersService } from '../customers/customers.service';
@@ -62,7 +63,19 @@ export interface FormattedOrder {
   items: FormattedOrderItem[];
 }
 
-const MEMORY_ORDERS = new Map<string, FormattedOrder>();
+export interface OrderStatusUpdate {
+  financialStatus?: string;
+  fulfillmentStatus?: string;
+  orderStatus?: string;
+}
+
+const ALLOWED_STATUS_VALUES: Record<keyof OrderStatusUpdate, readonly string[]> = {
+  financialStatus: ['pending', 'paid', 'refunded', 'voided'],
+  fulfillmentStatus: ['unfulfilled', 'pending', 'in_transit', 'delivered', 'fulfilled', 'returned', 'cancelled'],
+  orderStatus: ['open', 'closed', 'cancelled'],
+};
+
+// TODO(phase 3): replace with a DB-generated per-store sequence; this resets on restart.
 let ORDER_COUNTER = 1001;
 
 @Injectable()
@@ -83,386 +96,180 @@ export class OrdersService {
   async checkout(
     dto: CheckoutDto,
     headerCartId?: string,
-    storeId: string = 'store_default',
-    tenantId: string = 'ten_pilot_01'
+    storeId: string = 'store_default'
   ): Promise<FormattedOrder> {
     const cartId = dto.cartId || headerCartId;
     if (!cartId) {
       throw new BadRequestException('A valid cartId is required for checkout');
     }
 
-    if (!dto.customerName || !dto.customerPhone || !dto.shippingAddressLine1 || !dto.shippingCity) {
+    if (!dto.customerName?.trim() || !dto.customerPhone?.trim() || !dto.shippingAddressLine1?.trim() || !dto.shippingCity?.trim()) {
       throw new BadRequestException('Missing required fields: Name, Phone, Address, and City are required');
     }
 
     // 1. Fetch authoritative cart
-    const cart = await this.cartService.getOrCreateCart(cartId, storeId, tenantId);
-    if (!cart.items || cart.items.length === 0) {
+    const cart = await this.cartService.getCart(cartId);
+    if (!cart || cart.items.length === 0) {
       throw new BadRequestException('Cannot checkout with an empty cart');
     }
+    if (cart.storeId !== storeId) {
+      throw new BadRequestException('Cart does not belong to this store');
+    }
 
-    const orderId = this.generateId('ord');
-    const orderNumber = `PF-${ORDER_COUNTER++}`;
+    const tenantId = await resolveTenantId(this.db, storeId);
     const subtotalMinor = cart.subtotalMinor;
-    let shippingFeeMinor = 0; // Free delivery across Pakistan
+    const shippingFeeMinor = 0; // Free delivery across Pakistan
+
+    // 2. Validate the promo code. An invalid code rejects checkout instead of silently
+    // charging the customer more than the total they were shown.
     let discountCode: string | null = null;
     let discountMinor = 0;
-
-    // 2. Validate and apply discount promo code if supplied
     if (dto.discountCode) {
-      try {
-        const discResult = await this.discountsService.validateDiscount(
-          dto.discountCode,
-          subtotalMinor,
-          storeId,
-          tenantId
-        );
-        if (discResult.valid) {
-          discountCode = discResult.code;
-          discountMinor = discResult.discountAmountMinor;
-          if (discResult.freeShipping) {
-            shippingFeeMinor = 0;
-          }
-          await this.discountsService.incrementUsage(discResult.code);
-        }
-      } catch (err: any) {
-        this.logger.warn(`Discount validation skipped: ${err.message}`);
-      }
+      const discResult = await this.discountsService.validateDiscount(dto.discountCode, subtotalMinor, storeId, tenantId);
+      discountCode = discResult.code;
+      discountMinor = discResult.discountAmountMinor;
     }
 
     const totalMinor = Math.max(0, subtotalMinor - discountMinor + shippingFeeMinor);
     const paymentMethod = dto.paymentMethod || 'cod';
+    const orderId = this.generateId('ord');
+    const orderNumber = `PF-${ORDER_COUNTER++}`;
 
-    // 3. Shopify-style Customer CRM Attribution
-    let customerId: string | null = null;
+    // 3. Persist order, snapshots, stock and cart clear atomically.
+    await this.db.transaction(async (tx) => {
+      await tx.insert(orders).values({
+        id: orderId,
+        tenantId,
+        storeId,
+        orderNumber,
+        discountCode,
+        discountMinor,
+        customerName: dto.customerName.trim(),
+        customerPhone: dto.customerPhone.trim(),
+        customerEmail: dto.customerEmail?.trim() || null,
+        shippingAddressLine1: dto.shippingAddressLine1.trim(),
+        shippingAddressLine2: dto.shippingAddressLine2?.trim() || null,
+        shippingCity: dto.shippingCity.trim(),
+        shippingProvince: dto.shippingProvince?.trim() || 'Pakistan',
+        shippingPostalCode: dto.shippingPostalCode || null,
+        paymentMethod,
+        financialStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
+        fulfillmentStatus: 'unfulfilled',
+        orderStatus: 'open',
+        currency: cart.currency,
+        subtotalMinor,
+        shippingFeeMinor,
+        totalMinor,
+        notes: dto.notes || null,
+      });
+
+      await tx.insert(orderItems).values(
+        cart.items.map((item) => ({
+          id: this.generateId('oi'),
+          tenantId,
+          orderId,
+          variantId: item.variantId,
+          productId: item.productId,
+          title: item.title,
+          variantTitle: item.variantTitle,
+          sku: item.sku,
+          unitPriceMinor: item.priceMinor,
+          quantity: item.quantity,
+          totalMinor: item.totalMinor,
+        }))
+      );
+
+      // TODO(phase 3): lock variants in sorted order and reject when stock is insufficient.
+      await this.adjustStock(tx, cart.items, 'deduct');
+
+      if (discountCode) {
+        await this.discountsService.incrementUsage(discountCode, tx);
+      }
+
+      await tx.delete(cartItems).where(eq(cartItems.cartId, cartId));
+    });
+
+    this.logger.log(`Order ${orderNumber} (${orderId}) created`);
+
+    // 4. CRM attribution runs after commit so a failed order never inflates customer stats.
     try {
-      customerId = await this.customersService.syncCustomerFromOrder(
+      const customerId = await this.customersService.syncCustomerFromOrder(
         {
           name: dto.customerName,
           phone: dto.customerPhone,
           email: dto.customerEmail,
-          address: {
-            address1: dto.shippingAddressLine1,
-            city: dto.shippingCity,
-            province: dto.shippingProvince,
-          },
+          address: { address1: dto.shippingAddressLine1, city: dto.shippingCity, province: dto.shippingProvince },
           orderTotalMinor: totalMinor,
         },
         storeId,
         tenantId
       );
+      if (customerId) {
+        await this.db.update(orders).set({ customerId }).where(eq(orders.id, orderId));
+      }
     } catch (err: any) {
-      this.logger.warn(`Customer sync warning: ${err.message}`);
+      this.logger.warn(`Customer sync failed for order ${orderNumber}: ${err.message}`);
     }
 
-    try {
-      // 4. Persist Order in Postgres
-      await this.db.insert(orders).values({
-        id: orderId,
-        tenantId,
-        storeId,
-        orderNumber,
-        customerId,
-        discountCode,
-        discountMinor,
-        customerName: dto.customerName.trim(),
-        customerPhone: dto.customerPhone.trim(),
-        customerEmail: dto.customerEmail ? dto.customerEmail.trim() : null,
-        shippingAddressLine1: dto.shippingAddressLine1.trim(),
-        shippingAddressLine2: dto.shippingAddressLine2 ? dto.shippingAddressLine2.trim() : null,
-        shippingCity: dto.shippingCity.trim(),
-        shippingProvince: dto.shippingProvince ? dto.shippingProvince.trim() : 'Pakistan',
-        shippingPostalCode: dto.shippingPostalCode || null,
-        paymentMethod,
-        financialStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
-        fulfillmentStatus: 'unfulfilled',
-        orderStatus: 'open',
-        currency: 'PKR',
-        subtotalMinor,
-        shippingFeeMinor,
-        totalMinor,
-        notes: dto.notes || null,
-      } as any);
-
-      // 3. Persist Immutable Order Items Snapshots
-      const itemsToInsert = cart.items.map((item) => ({
-        id: this.generateId('oi'),
-        tenantId,
-        orderId,
-        variantId: item.variantId,
-        productId: item.productId,
-        title: item.title,
-        variantTitle: item.variantTitle,
-        sku: item.sku,
-        unitPriceMinor: item.priceMinor,
-        quantity: item.quantity,
-        totalMinor: item.totalMinor,
-      }));
-
-      for (const itemRecord of itemsToInsert) {
-        await this.db.insert(orderItems).values(itemRecord as any);
-      }
-
-      // 4. Atomic Inventory Stock Deduction
-      for (const item of cart.items) {
-        if (item.variantId) {
-          try {
-            await this.db
-              .update(productVariants)
-              .set({
-                stock: sql`GREATEST(0, ${productVariants.stock} - ${item.quantity})`,
-                updatedAt: new Date(),
-              } as any)
-              .where(eq(productVariants.id, item.variantId));
-            this.logger.log(`Deducted ${item.quantity} units from variant ${item.variantId} (Order: ${orderNumber})`);
-          } catch (stockErr: any) {
-            this.logger.warn(`Failed to deduct stock for variant ${item.variantId}: ${stockErr.message}`);
-          }
-        }
-      }
-
-      // 5. Clear Cart in DB
-      await this.db.delete(cartItems).where(eq(cartItems.cartId, cartId)).catch(() => null);
-
-      this.logger.log(`Order ${orderNumber} (${orderId}) created successfully for customer ${dto.customerPhone}`);
-
-      return {
-        id: orderId,
-        orderNumber,
-        storeId,
-        customerName: dto.customerName,
-        customerPhone: dto.customerPhone,
-        customerEmail: dto.customerEmail || null,
-        shippingAddressLine1: dto.shippingAddressLine1,
-        shippingAddressLine2: dto.shippingAddressLine2 || null,
-        shippingCity: dto.shippingCity,
-        shippingProvince: dto.shippingProvince || 'Pakistan',
-        shippingPostalCode: dto.shippingPostalCode || null,
-        paymentMethod,
-        financialStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
-        fulfillmentStatus: 'unfulfilled',
-        orderStatus: 'open',
-        currency: 'PKR',
-        subtotalMinor,
-        shippingFeeMinor,
-        totalMinor,
-        notes: dto.notes || null,
-        createdAt: new Date().toISOString(),
-        items: cart.items.map((i) => ({
-          id: i.id,
-          productId: i.productId,
-          variantId: i.variantId,
-          title: i.title,
-          variantTitle: i.variantTitle,
-          sku: i.sku,
-          unitPriceMinor: i.priceMinor,
-          quantity: i.quantity,
-          totalMinor: i.totalMinor,
-        })),
-      };
-    } catch (err: any) {
-      this.logger.warn(`Failed to persist order in Postgres (${err.message}). Using resilient memory order.`);
-    }
-
-    // Resilient Memory Fallback
-    const memoryOrder: FormattedOrder = {
-      id: orderId,
-      orderNumber,
-      storeId,
-      customerName: dto.customerName,
-      customerPhone: dto.customerPhone,
-      customerEmail: dto.customerEmail || null,
-      shippingAddressLine1: dto.shippingAddressLine1,
-      shippingAddressLine2: dto.shippingAddressLine2 || null,
-      shippingCity: dto.shippingCity,
-      shippingProvince: dto.shippingProvince || 'Pakistan',
-      shippingPostalCode: dto.shippingPostalCode || null,
-      paymentMethod,
-      financialStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
-      fulfillmentStatus: 'unfulfilled',
-      orderStatus: 'open',
-      currency: 'PKR',
-      subtotalMinor,
-      shippingFeeMinor,
-      totalMinor,
-      notes: dto.notes || null,
-      createdAt: new Date().toISOString(),
-      items: cart.items.map((i) => ({
-        id: i.id,
-        productId: i.productId,
-        variantId: i.variantId,
-        title: i.title,
-        variantTitle: i.variantTitle,
-        sku: i.sku,
-        unitPriceMinor: i.priceMinor,
-        quantity: i.quantity,
-        totalMinor: i.totalMinor,
-      })),
-    };
-
-    MEMORY_ORDERS.set(orderId, memoryOrder);
-    return memoryOrder;
+    return this.getOrderById(orderId);
   }
 
   async getOrderById(orderId: string): Promise<FormattedOrder> {
-    try {
-      const order = await this.db.query.orders.findFirst({
-        where: eq(orders.id, orderId),
-        with: {
-          items: true,
-        },
-      });
+    const order = await this.db.query.orders.findFirst({
+      where: eq(orders.id, orderId),
+      with: { items: true },
+    });
 
-      if (order) {
-        return {
-          id: order.id,
-          orderNumber: order.orderNumber,
-          storeId: order.storeId,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone,
-          customerEmail: order.customerEmail,
-          shippingAddressLine1: order.shippingAddressLine1,
-          shippingAddressLine2: order.shippingAddressLine2,
-          shippingCity: order.shippingCity,
-          shippingProvince: order.shippingProvince,
-          shippingPostalCode: order.shippingPostalCode,
-          paymentMethod: order.paymentMethod,
-          financialStatus: order.financialStatus,
-          fulfillmentStatus: order.fulfillmentStatus,
-          orderStatus: order.orderStatus,
-          courierName: (order as any).courierName || null,
-          courierTrackingNumber: (order as any).courierTrackingNumber || null,
-          courierStatus: (order as any).courierStatus || null,
-          discountCode: (order as any).discountCode || null,
-          discountMinor: (order as any).discountMinor || 0,
-          currency: order.currency,
-          subtotalMinor: order.subtotalMinor,
-          shippingFeeMinor: order.shippingFeeMinor,
-          totalMinor: order.totalMinor,
-          notes: order.notes,
-          createdAt: order.createdAt.toISOString(),
-          items: (order as any).items.map((item: any) => ({
-            id: item.id,
-            productId: item.productId,
-            variantId: item.variantId,
-            title: item.title,
-            variantTitle: item.variantTitle,
-            sku: item.sku,
-            unitPriceMinor: item.unitPriceMinor,
-            quantity: item.quantity,
-            totalMinor: item.totalMinor,
-          })),
-        };
-      }
-    } catch (err: any) {
-      this.logger.warn(`Postgres order lookup failed (${err.message}). Checking memory fallback.`);
-    }
-
-    const mem = MEMORY_ORDERS.get(orderId);
-    if (!mem) {
+    if (!order) {
       throw new NotFoundException(`Order with id '${orderId}' not found`);
     }
-    return mem;
+    return this.formatOrder(order);
   }
 
   async listAdminOrders(storeId: string = 'store_default'): Promise<FormattedOrder[]> {
-    try {
-      const records = await this.db.query.orders.findMany({
-        where: eq(orders.storeId, storeId),
-        with: {
-          items: true,
-        },
-      });
-
-      if (records && records.length > 0) {
-        return records.map((order) => ({
-          id: order.id,
-          orderNumber: order.orderNumber,
-          storeId: order.storeId,
-          customerName: order.customerName,
-          customerPhone: order.customerPhone,
-          customerEmail: order.customerEmail,
-          shippingAddressLine1: order.shippingAddressLine1,
-          shippingAddressLine2: order.shippingAddressLine2,
-          shippingCity: order.shippingCity,
-          shippingProvince: order.shippingProvince,
-          shippingPostalCode: order.shippingPostalCode,
-          paymentMethod: order.paymentMethod,
-          financialStatus: order.financialStatus,
-          fulfillmentStatus: order.fulfillmentStatus,
-          orderStatus: order.orderStatus,
-          courierName: (order as any).courierName || null,
-          courierTrackingNumber: (order as any).courierTrackingNumber || null,
-          courierStatus: (order as any).courierStatus || null,
-          discountCode: (order as any).discountCode || null,
-          discountMinor: (order as any).discountMinor || 0,
-          currency: order.currency,
-          subtotalMinor: order.subtotalMinor,
-          shippingFeeMinor: order.shippingFeeMinor,
-          totalMinor: order.totalMinor,
-          notes: order.notes,
-          createdAt: order.createdAt.toISOString(),
-          items: (order as any).items.map((item: any) => ({
-            id: item.id,
-            productId: item.productId,
-            variantId: item.variantId,
-            title: item.title,
-            variantTitle: item.variantTitle,
-            sku: item.sku,
-            unitPriceMinor: item.unitPriceMinor,
-            quantity: item.quantity,
-            totalMinor: item.totalMinor,
-          })),
-        })).reverse();
-      }
-    } catch (err: any) {
-      this.logger.warn(`Postgres listAdminOrders failed (${err.message}). Using memory fallback.`);
-    }
-
-    return Array.from(MEMORY_ORDERS.values()).reverse();
+    const records = await this.db.query.orders.findMany({
+      where: eq(orders.storeId, storeId),
+      with: { items: true },
+      orderBy: [desc(orders.createdAt)],
+    });
+    return records.map((order) => this.formatOrder(order));
   }
 
-  async updateOrderStatus(
-    orderId: string,
-    update: { financialStatus?: string; fulfillmentStatus?: string; orderStatus?: string }
-  ): Promise<FormattedOrder> {
-    try {
-      await this.db.update(orders)
-        .set({ ...update, updatedAt: new Date() } as any)
-        .where(eq(orders.id, orderId));
-    } catch (err: any) {
-      this.logger.warn(`Postgres update order status failed (${err.message}). Updating memory fallback.`);
-    }
-
-    const mem = MEMORY_ORDERS.get(orderId);
-    if (mem) {
-      if (update.financialStatus) mem.financialStatus = update.financialStatus;
-      if (update.fulfillmentStatus) mem.fulfillmentStatus = update.fulfillmentStatus;
-      if (update.orderStatus) mem.orderStatus = update.orderStatus;
-    }
-
-    // Automatic inventory restock if order is cancelled
-    if (update.orderStatus === 'cancelled') {
-      try {
-        const order = await this.getOrderById(orderId);
-        if (order && order.items) {
-          for (const item of order.items) {
-            if (item.variantId) {
-              await this.db
-                .update(productVariants)
-                .set({
-                  stock: sql`${productVariants.stock} + ${item.quantity}`,
-                  updatedAt: new Date(),
-                } as any)
-                .where(eq(productVariants.id, item.variantId));
-              this.logger.log(`Restocked ${item.quantity} units to variant ${item.variantId} (Cancelled Order: ${order.orderNumber})`);
-            }
-          }
-        }
-      } catch (restockErr: any) {
-        this.logger.warn(`Failed to restock inventory for order ${orderId}: ${restockErr.message}`);
+  async updateOrderStatus(orderId: string, update: OrderStatusUpdate): Promise<FormattedOrder> {
+    // Only these three columns may be changed through this endpoint, and only to known values.
+    const patch: OrderStatusUpdate = {};
+    for (const field of Object.keys(ALLOWED_STATUS_VALUES) as Array<keyof OrderStatusUpdate>) {
+      const value = update?.[field];
+      if (value === undefined) continue;
+      if (!ALLOWED_STATUS_VALUES[field].includes(value)) {
+        throw new BadRequestException(`Invalid ${field} '${value}'`);
       }
+      patch[field] = value;
     }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('No status fields supplied');
+    }
+
+    await this.db.transaction(async (tx) => {
+      const current = await tx.query.orders.findFirst({
+        where: eq(orders.id, orderId),
+        with: { items: true },
+      });
+      if (!current) {
+        throw new NotFoundException(`Order with id '${orderId}' not found`);
+      }
+
+      await tx.update(orders).set({ ...patch, updatedAt: new Date() }).where(eq(orders.id, orderId));
+
+      // Stock moves only on a real transition, so repeated cancels can't restock twice.
+      const wasCancelled = current.orderStatus === 'cancelled';
+      const isCancelled = (patch.orderStatus ?? current.orderStatus) === 'cancelled';
+      if (!wasCancelled && isCancelled) {
+        await this.adjustStock(tx, current.items, 'restock');
+      } else if (wasCancelled && !isCancelled) {
+        await this.adjustStock(tx, current.items, 'deduct');
+      }
+    });
 
     return this.getOrderById(orderId);
   }
@@ -474,103 +281,106 @@ export class OrdersService {
       ? (order.notes.includes('WhatsApp Verified') ? order.notes : `${order.notes} | ${tag}`)
       : tag;
 
-    try {
-      await this.db.update(orders)
-        .set({ notes: updatedNotes, updatedAt: new Date() } as any)
-        .where(eq(orders.id, orderId));
-    } catch (err: any) {
-      this.logger.warn(`Postgres verifyWhatsApp update failed: ${err.message}`);
-    }
-
-    if (MEMORY_ORDERS.has(orderId)) {
-      const mem = MEMORY_ORDERS.get(orderId)!;
-      mem.notes = updatedNotes;
-    }
+    await this.db.update(orders)
+      .set({ notes: updatedNotes, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
 
     this.logger.log(`Order ${order.orderNumber} marked WhatsApp verified by ${verifiedBy}`);
     return this.getOrderById(orderId);
   }
 
   async updateOrderNotes(orderId: string, notes: string): Promise<FormattedOrder> {
-    try {
-      await this.db.update(orders)
-        .set({ notes, updatedAt: new Date() } as any)
-        .where(eq(orders.id, orderId));
-    } catch (err: any) {
-      this.logger.warn(`Postgres updateOrderNotes failed: ${err.message}`);
-    }
-
-    if (MEMORY_ORDERS.has(orderId)) {
-      const mem = MEMORY_ORDERS.get(orderId)!;
-      mem.notes = notes;
-    }
+    await this.getOrderById(orderId);
+    await this.db.update(orders)
+      .set({ notes, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
 
     return this.getOrderById(orderId);
   }
 
   async bookCourier(orderId: string, courierName: string = 'Trax') {
     const order = await this.getOrderById(orderId);
+    if (order.orderStatus === 'cancelled') {
+      throw new BadRequestException('Cannot book a courier for a cancelled order');
+    }
+    if (order.courierTrackingNumber) {
+      throw new BadRequestException(`Order already booked with ${order.courierName} (CN: ${order.courierTrackingNumber})`);
+    }
+
+    // NOTE: no courier API integration yet — this CN is generated locally, not issued by Trax.
     const prefix = courierName.substring(0, 3).toUpperCase();
     const trackingNumber = `${prefix}-${Math.floor(1000000 + Math.random() * 9000000)}`;
 
-    const trackingNote = `Dispatched via ${courierName} (CN: ${trackingNumber})`;
-    const updatedNotes = order.notes ? `${order.notes} | ${trackingNote}` : trackingNote;
+    await this.db.update(orders)
+      .set({
+        courierName,
+        courierTrackingNumber: trackingNumber,
+        courierStatus: 'booked',
+        fulfillmentStatus: 'in_transit',
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, orderId));
 
-    await this.updateOrderStatus(orderId, {
-      fulfillmentStatus: 'in_transit',
-    });
-
-    try {
-      await this.db.update(orders)
-        .set({ notes: updatedNotes, updatedAt: new Date() } as any)
-        .where(eq(orders.id, orderId));
-    } catch (err: any) {
-      // Memory fallback
-    }
-
-    if (MEMORY_ORDERS.has(orderId)) {
-      const mem = MEMORY_ORDERS.get(orderId)!;
-      mem.fulfillmentStatus = 'in_transit';
-      mem.notes = updatedNotes;
-    }
-
-    return {
-      success: true,
-      orderId,
-      orderNumber: order.orderNumber,
-      courierName,
-      trackingNumber,
-      estimatedDelivery: '24–48 Hours',
-      airwayBillUrl: `/admin/airway-bill/${orderId}?cn=${trackingNumber}`,
-    };
+    return this.getOrderById(orderId);
   }
 
-  async getAnalytics(storeId: string = 'store_default') {
-    const allOrders = await this.listAdminOrders(storeId);
+  private async adjustStock(
+    executor: DbExecutor,
+    items: Array<{ variantId: string | null; quantity: number }>,
+    direction: 'deduct' | 'restock'
+  ) {
+    for (const item of items) {
+      if (!item.variantId) continue;
+      const stock =
+        direction === 'deduct'
+          ? sql`GREATEST(0, ${productVariants.stock} - ${item.quantity})`
+          : sql`${productVariants.stock} + ${item.quantity}`;
+      await executor
+        .update(productVariants)
+        .set({ stock, updatedAt: new Date() })
+        .where(eq(productVariants.id, item.variantId));
+    }
+  }
 
-    const nonCancelled = allOrders.filter((o) => o.orderStatus !== 'cancelled');
-    const grossRevenueMinor = nonCancelled.reduce((sum, o) => sum + o.totalMinor, 0);
-    const pendingCodCashMinor = allOrders
-      .filter((o) => o.paymentMethod === 'cod' && o.financialStatus === 'pending' && o.orderStatus !== 'cancelled')
-      .reduce((sum, o) => sum + o.totalMinor, 0);
-
-    const unfulfilledCount = allOrders.filter((o) => o.fulfillmentStatus === 'unfulfilled' && o.orderStatus !== 'cancelled').length;
-    const inTransitCount = allOrders.filter((o) => o.fulfillmentStatus === 'in_transit').length;
-    const deliveredCount = allOrders.filter((o) => o.fulfillmentStatus === 'fulfilled').length;
-    const cancelledCount = allOrders.filter((o) => o.orderStatus === 'cancelled').length;
-
-    const rtoRate = allOrders.length > 0 ? ((cancelledCount / allOrders.length) * 100).toFixed(1) : '0.0';
-
+  private formatOrder(order: any): FormattedOrder {
     return {
-      grossRevenueMinor,
-      totalOrders: allOrders.length,
-      pendingCodCashMinor,
-      unfulfilledCount,
-      inTransitCount,
-      deliveredCount,
-      cancelledCount,
-      rtoRatePercent: parseFloat(rtoRate),
-      currency: 'PKR',
+      id: order.id,
+      orderNumber: order.orderNumber,
+      storeId: order.storeId,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      customerEmail: order.customerEmail,
+      shippingAddressLine1: order.shippingAddressLine1,
+      shippingAddressLine2: order.shippingAddressLine2,
+      shippingCity: order.shippingCity,
+      shippingProvince: order.shippingProvince,
+      shippingPostalCode: order.shippingPostalCode,
+      paymentMethod: order.paymentMethod,
+      financialStatus: order.financialStatus,
+      fulfillmentStatus: order.fulfillmentStatus,
+      orderStatus: order.orderStatus,
+      courierName: order.courierName,
+      courierTrackingNumber: order.courierTrackingNumber,
+      courierStatus: order.courierStatus,
+      discountCode: order.discountCode,
+      discountMinor: order.discountMinor,
+      currency: order.currency,
+      subtotalMinor: order.subtotalMinor,
+      shippingFeeMinor: order.shippingFeeMinor,
+      totalMinor: order.totalMinor,
+      notes: order.notes,
+      createdAt: order.createdAt.toISOString(),
+      items: (order.items || []).map((item: any) => ({
+        id: item.id,
+        productId: item.productId,
+        variantId: item.variantId,
+        title: item.title,
+        variantTitle: item.variantTitle,
+        sku: item.sku,
+        unitPriceMinor: item.unitPriceMinor,
+        quantity: item.quantity,
+        totalMinor: item.totalMinor,
+      })),
     };
   }
 }

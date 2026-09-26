@@ -2,11 +2,40 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 export { formatPrice } from './utils';
 
+/** Calls the API and unwraps `data`; throws with the API's own message on failure. */
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      cache: 'no-store',
+      ...init,
+      headers: {
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new Error('Cannot reach the API server. Check that it is running.');
+  }
+
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = Array.isArray(json?.message) ? json.message.join(', ') : json?.message;
+    throw new Error(message || `Request failed (${res.status})`);
+  }
+  return (json?.data ?? json) as T;
+}
+
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : 'Something went wrong';
+}
+
 export interface PlatformTenant {
   id: string;
   name: string;
-  slug: string;
-  plan: 'starter' | 'growth' | 'scale' | 'enterprise';
+  slug: string | null;
+  /** Subscription plans are not stored yet, so this is always null for now. */
+  plan: string | null;
   status: 'active' | 'suspended';
   createdAt: string;
   storesCount: number;
@@ -16,69 +45,32 @@ export interface PlatformTenant {
 export interface PlatformMetrics {
   totalTenants: number;
   activeStores: number;
-  platformArrMinor: number;
+  /** Null until billing/subscriptions are tracked. */
+  platformArrMinor: number | null;
   monthlyGmvMinor: number;
-  apiP95LatencyMs: number;
+  /** Null until latency telemetry is collected. */
+  apiP95LatencyMs: number | null;
   systemHealth: 'healthy' | 'degraded' | 'incident';
 }
 
 export async function getPlatformMetrics(): Promise<PlatformMetrics> {
-  try {
-    const res = await fetch(`${API_URL}/v1/platform/analytics`, { cache: 'no-store' });
-    if (res.ok) {
-      const json = await res.json();
-      return json.data || json;
-    }
-  } catch {}
-  return {
-    totalTenants: 12,
-    activeStores: 18,
-    platformArrMinor: 145000000, // PKR 1.45M ARR
-    monthlyGmvMinor: 4890000000, // PKR 48.9M GMV
-    apiP95LatencyMs: 14,
-    systemHealth: 'healthy',
-  };
+  return request<PlatformMetrics>('/v1/platform/analytics');
 }
 
 export async function getPlatformTenants(): Promise<PlatformTenant[]> {
-  try {
-    const res = await fetch(`${API_URL}/v1/platform/tenants`, { cache: 'no-store' });
-    if (res.ok) {
-      const json = await res.json();
-      const list = Array.isArray(json) ? json : (json.data || []);
-      if (Array.isArray(list) && list.length > 0) return list;
-    }
-  } catch {}
-  return [
-    {
-      id: 'tenant_01',
-      name: 'Outfitters Retail PK',
-      slug: 'outfitters',
-      plan: 'scale',
-      status: 'active',
-      createdAt: '2026-01-15',
-      storesCount: 3,
-      monthlyGmvMinor: 1890000000,
-    },
-    {
-      id: 'tenant_02',
-      name: 'Khaadi Pret & Home',
-      slug: 'khaadi',
-      plan: 'enterprise',
-      status: 'active',
-      createdAt: '2026-02-01',
-      storesCount: 5,
-      monthlyGmvMinor: 2450000000,
-    },
-    {
-      id: 'tenant_03',
-      name: 'Sana Safinaz Couture',
-      slug: 'sana-safinaz',
-      plan: 'growth',
-      status: 'active',
-      createdAt: '2026-02-18',
-      storesCount: 2,
-      monthlyGmvMinor: 550000000,
-    },
-  ];
+  return request<PlatformTenant[]>('/v1/platform/tenants');
+}
+
+export async function createTenant(input: { name: string; slug: string }): Promise<PlatformTenant> {
+  return request<PlatformTenant>('/v1/platform/tenants', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function setTenantStatus(id: string, status: 'active' | 'suspended'): Promise<PlatformTenant> {
+  return request<PlatformTenant>(`/v1/platform/tenants/${encodeURIComponent(id)}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
 }
