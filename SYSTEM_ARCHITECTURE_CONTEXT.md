@@ -4,24 +4,29 @@
 > **Target Audience:** Mid-market D2C brands (50–500 orders/day) and scaling merchants in Pakistan & MENA.
 > **Engineering Motto:** *"One unified, lightning-fast commerce engine powering infinitely custom storefronts."*
 
+**Last updated:** 2026-09-27 · **Branch:** `main` @ `cfeb602` (Hardening Step 3 complete) · **Status:** feature-complete for a pilot merchant; not yet deployed (see §10).
+
 ---
 
 ## 1. Core Architectural Invariants (Non-Negotiables)
 
-Har naya module ya feature likhte waqt in 6 rules ko follow karna lazmi hai:
+Har naya module ya feature likhte waqt in rules ko follow karna lazmi hai. "Status" column batata hai ke code mein ye aaj kahan tak nafiz hai.
 
-| # | Invariant | Engineering Rule | Why it matters |
+| # | Invariant | Engineering Rule | Status |
 | :--- | :--- | :--- | :--- |
-| **1** | **Integer Money Only** | `price_minor` integer store hoga (e.g., `249000` = PKR 2,490.00). Float math kabhi use nahi hoga. | Float math round-off errors aur financial reconciliation bugs produce karta hai. |
-| **2** | **Zero-Leak Multi-Tenancy** | Har table par `tenant_id` denormalized hoga. Har query `store_id` aur `tenant_id` se strictly scoped hogi. | Tenant A ka data Tenant B ko kabhi leak na ho sake. |
-| **3** | **Ultra-Fast API Pipeline** | NestJS default Express ke bajaye **Fastify HTTP adapter** par chalega. Response latency target: **p95 < 20ms**. | High concurrency flash sales (11.11 / Eid) par server crash na ho. |
-| **4** | **Sub-Second Storefront** | Next.js Server Components + Tag-based ISR (`revalidateTag`). Zero unnecessary client-side JavaScript. | Mobile 4G par instant page load (< 1s) = Maximum conversion rate. |
-| **5** | **Deadlock-Free Concurrency** | Inventory reserve karte waqt variant IDs alphabetically sort hongi (`ORDER BY variant_id ASC FOR UPDATE`). | Flash sales me multiple buyers aane par DB deadlocks na hon. |
-| **6** | **Immutable Order Snapshots** | Order create hote waqt product title, SKU, variant, price aur tax ka frozen snapshot persist hoga. | Agar merchant baad me product edit ya delete kare, purana order corrupt na ho. |
+| **1** | **Integer Money Only** | `*_minor` integer columns (e.g. `249000` = PKR 2,490.00). Float math kabhi nahi. | ✅ Enforced. Discount math rounds to whole minor units (`discount-math.ts`). |
+| **2** | **Zero-Leak Multi-Tenancy** | Har table par `tenant_id` denormalized; har query store/tenant se scoped. Store **server** decide karta hai, client nahi. | ✅ Enforced via guards (§5). `tenant_id` always equals the owning store's tenant (repaired in migration 0001). E2E-tested. |
+| **3** | **Ultra-Fast API Pipeline** | NestJS on **Fastify**. Target p95 < 20ms. | ⚠️ Fastify ✅. Latency **never measured**; with Neon over the internet a round-trip is ~1–2s in dev. Measure in production. |
+| **4** | **Sub-Second Storefront** | Next.js Server Components + tag-based ISR (`revalidateTag`). | ⚠️ ISR with 60s `revalidate` + tags ✅. `revalidateTag` is **not called anywhere yet**, so admin edits reach the storefront within ~60s, not instantly. |
+| **5** | **Deadlock-Free Concurrency** | Stock rows locked sorted by id (`ORDER BY id FOR UPDATE`), fixed lock order. | ✅ Enforced in checkout and order re-open (§6). E2E-tested with parallel buyers. |
+| **6** | **Immutable Order Snapshots** | Title, variant, SKU, unit price frozen on `order_items` at checkout. | ✅ Enforced. Products are retired by **unpublishing**, never deleted, so history stays intact. |
+| **7** | **No Fake Data or Fake Success** *(added in hardening)* | Kabhi mock/demo data ya "optimistic" success mat dikhao. Failure = asli error. Numbers sirf database se. | ✅ All in-memory/demo fallbacks and hardcoded UI figures removed (Hardening Phase 1 & Step 1). |
 
 ---
 
 ## 2. Target Performance & Speed SLAs
+
+Targets (none measured yet — add load testing before launch):
 
 * **Storefront TTFB (Cache Hit):** `< 50ms` (via Edge CDN).
 * **Storefront Full Page Load (LCP):** `< 1.2s` on mobile 4G.
@@ -31,234 +36,272 @@ Har naya module ya feature likhte waqt in 6 rules ko follow karna lazmi hai:
 
 ---
 
-## 3. Monorepo Structure & Package Map
+## 3. Tech Stack
+
+| Layer | Technology |
+| :--- | :--- |
+| Runtime | Node.js 24+, pnpm 9 monorepo, Turborepo |
+| API | NestJS 11 on Fastify 5, pino JSON logs |
+| Database | PostgreSQL (Neon), Drizzle ORM 0.38 (queries), hand-written SQL migrations |
+| Frontends | Next.js 16 (App Router, `proxy.ts`), React 19, Tailwind 3, shadcn/ui |
+| Auth | Own implementation: scrypt passwords, DB sessions, HttpOnly cookies |
+| Tests | `node:test` (built-in) — unit + end-to-end |
+
+---
+
+## 4. Monorepo Structure & Package Map
 
 ```text
 ecommerce-saas/
 ├── apps/
-│   ├── web/                  # Next.js 15 Customer Storefront (Port 3000)
-│   │   ├── app/              # Catalog, PDP, Slide-over Cart, 1-Page COD Checkout
-│   │   └── package.json
-│   │
-│   ├── merchant-admin/       # Next.js 15 Merchant Store Admin (Port 3001)
-│   │   ├── app/              # Calm, minimal UI: Products Catalog, Variants, Orders, Trax Dispatch, 4x6 Thermal Label
-│   │   ├── components/ui/    # shadcn/ui components (calm font weights, muted zinc)
-│   │   └── package.json
-│   │
-│   ├── platform-admin/       # Next.js 15 SaaS Super Admin (Port 3002)
-│   │   ├── app/              # Platform ARR, Multi-Tenant Stores, Subscriptions, Fleet Latency
-│   │   └── package.json
-│   │
-│   └── api/                  # NestJS + Fastify HTTP Core (Port 4000)
+│   ├── web/                    # Storefront (Port 3000) — catalog, PDP, cart drawer, 1-page COD checkout,
+│   │                           #   order confirmation (token-protected), store name/WhatsApp from API
+│   ├── merchant-admin/         # Merchant Admin (Port 3001)
+│   │   ├── app/                # login, dashboard, orders (+ detail), products, collections, customers,
+│   │   │                       #   discounts, analytics, settings, error.tsx
+│   │   ├── components/         # app-shell (sidebar/sign-out), product-editor, packing-label, error-banner, ui/
+│   │   ├── lib/                # api.ts (client), server-auth.ts, order-checks.ts, slug.ts
+│   │   ├── proxy.ts            # redirects to /login when there is no session cookie
+│   │   └── next.config.mjs     # /api/* rewrite -> API_URL (same-origin cookies)
+│   ├── platform-admin/         # Platform (Super) Admin (Port 3002) — login, metrics, tenants, account
+│   │   └── (same pattern: app-shell, proxy.ts, /api rewrite, reset-password-dialog)
+│   └── api/                    # NestJS + Fastify (Port 4000)
 │       ├── src/
-│       │   ├── products/     # Storefront & Merchant Catalog APIs
-│       │   ├── cart/         # Cart & Session APIs
-│       │   ├── orders/       # Checkout & Merchant Fulfillment APIs
-│       │   ├── platform/     # SaaS Super Admin APIs
-│       │   └── db/           # Drizzle DB global injection module
-│       └── package.json
-│
+│       │   ├── auth/           # AuthService, guards (Merchant/Platform/StorefrontStore), session-token
+│       │   ├── common/         # rate-limit guard, all-exceptions filter, pagination helpers
+│       │   ├── products/       # storefront catalog + merchant products, variants, stock, collections
+│       │   ├── cart/           # storefront cart
+│       │   ├── orders/         # checkout (transactional) + merchant fulfillment
+│       │   ├── customers/      # CRM (upsert on checkout, paginated list), phone.ts
+│       │   ├── discounts/      # validate / atomic redeem / on-off, discount-math.ts
+│       │   ├── analytics/      # SQL-aggregate store analytics
+│       │   ├── store/          # store settings (name, WhatsApp)
+│       │   ├── platform/       # tenants, platform metrics, merchant password reset
+│       │   └── db/             # Drizzle provider, resolveTenantId, DbExecutor type
+│       ├── test/               # unit.test.ts, e2e.test.ts
+│       └── .env.example
 ├── packages/
-│   ├── db/                   # Drizzle ORM + PostgreSQL client + Migrations
-│   ├── typescript-config/    # Shared TypeScript configurations
-│   ├── eslint-config/        # Shared ESLint rules
-│   └── ui/                   # Shared React component library
-│
-├── pnpm-workspace.yaml       # pnpm monorepo workspace configuration
-├── turbo.json                # Turborepo build pipeline
-└── SYSTEM_ARCHITECTURE_CONTEXT.md  # THIS FILE (Living architecture state)
+│   ├── db/
+│   │   ├── src/index.ts        # Drizzle schema + relations + client factory (what the code expects)
+│   │   ├── migrations/         # 0001_baseline, 0002_taxonomy_categories, 0003_orders_province_not_null
+│   │   └── src/                # migrate, check-schema, seed-demo, create-user, reset-password, reset, password
+│   ├── typescript-config/  eslint-config/  ui/
+├── README.md                   # setup, commands, tests, production notes
+└── SYSTEM_ARCHITECTURE_CONTEXT.md  # THIS FILE (living architecture state)
 ```
 
----
-
-## 4. Database Schema Map (Implemented So Far)
-
-### `tenants`
-* `id` (text, PK) — e.g. `ten_pilot_01`
-* `name` (text)
-* `default_currency` (text, default `'PKR'`) — ISO 4217 (e.g. `'PKR'`, `'AED'`, `'SAR'`, `'USD'`)
-* `default_locale` (text, default `'en'`) — e.g. `'en'`, `'ur'`, `'ar'`
-* `status` (text, default `'active'`)
-* `created_at`, `updated_at` (timestamptz)
-
-### `stores`
-* `id` (text, PK) — e.g. `store_default`
-* `tenant_id` (text, FK $\rightarrow$ `tenants.id`, CASCADE)
-* `name` (text)
-* `slug` (text, UNIQUE) — e.g. `outfitters-pk`
-* `currency` (text, default `'PKR'`) — Store primary commerce currency
-* `default_locale` (text, default `'en'`) — Store primary language
-* `supported_locales` (text[], default `['en']`) — e.g. `['en', 'ur']` (for multi-language toggle)
-* `timezone` (text, default `'Asia/Karachi'`)
-* `created_at`, `updated_at` (timestamptz)
-
-### `categories` (Shopify Standard Taxonomy)
-* `id` (text, PK) — e.g. `cat_tshirts`
-* `name` (text) — e.g. `T-Shirts`
-* `full_name` (text) — e.g. `Apparel & Accessories > Clothing > Shirts & Tops > T-Shirts`
-* `parent_id` (text, FK $\rightarrow$ `categories.id`, nullable)
-* `level` (integer, default `0`)
-
-### `collections` (Storefront Merchandising)
-* `id` (text, PK) — e.g. `col_summer_2026`
-* `tenant_id` (text, FK $\rightarrow$ `tenants.id`, CASCADE)
-* `store_id` (text, FK $\rightarrow$ `stores.id`, CASCADE)
-* `title` (text) — e.g. `Summer 2026 Collection`
-* `slug` (text) — e.g. `summer-2026`
-* `description` (text)
-* `image_url` (text)
-* `collection_type` (text, default `'manual'`) — `'manual'` | `'smart'`
-* `rules` (jsonb) — Automated rules for smart collections
-* `is_published` (boolean, default `true`)
-
-### `collection_products` (Many-to-Many Join)
-* `id` (text, PK)
-* `tenant_id` (text, FK $\rightarrow$ `tenants.id`)
-* `collection_id` (text, FK $\rightarrow$ `collections.id`, CASCADE)
-* `product_id` (text, FK $\rightarrow$ `products.id`, CASCADE)
-* `position` (integer, default `0`)
-
-### `products`
-* `id` (text, PK) — e.g. `prod_01`
-* `tenant_id` (text, FK $\rightarrow$ `tenants.id`)
-* `store_id` (text, FK $\rightarrow$ `stores.id`)
-* `category_id` (text, FK $\rightarrow$ `categories.id`, nullable) — Exactly 1 category per product
-* `title` (text)
-* `slug` (text)
-* `description` (text)
-* `product_type` (text, nullable) — e.g. `T-Shirt`
-* `vendor` (text, nullable) — e.g. `Outfitters PK`
-* `tags` (text[], default `[]`)
-* `options` (jsonb) — Dynamic option dimensions: `[{ name: "Color", values: ["Black", "White"] }]`
-* `is_published` (boolean, default `true`)
-* `created_at`, `updated_at` (timestamptz)
-* **Indexes:** `idx_products_store_slug`, `idx_products_tenant`, `idx_products_category`
-
-### `product_variants`
-* `id` (text, PK) — e.g. `var_01`
-* `tenant_id` (text, FK $\rightarrow$ `tenants.id`)
-* `product_id` (text, FK $\rightarrow$ `products.id`, CASCADE)
-* `title` (text, default `'Default Title'`)
-* `sku` (text)
-* `price_minor` (integer) — e.g. `249000` = PKR 2,490
-* `compare_at_price_minor` (integer, nullable)
-* `stock` (integer, default `0`)
-* `created_at`, `updated_at` (timestamptz)
-* **Indexes:** `idx_variants_product (product_id)`, `idx_variants_tenant (tenant_id)`
+`apps/docs` and `packages/ui` are unused Turborepo starter leftovers.
 
 ---
 
-### `users` / `sessions` (Auth — added in Hardening Phase 2)
-* `users`: `id`, `email` (UNIQUE, lowercased), `name`, `password_hash` (scrypt), `role` (`merchant` | `platform_admin`), `tenant_id` (null for platform admins), `status`
-* `sessions`: `id` = **sha256 of the session token** (raw token never stored), `user_id`, `expires_at` (7 days)
-* `orders.access_token` = sha256 of the shopper's order token (storefront order lookups require the raw token)
-* Unique per store: `products(store_id, slug)`, `collections(store_id, slug)`, `discounts(store_id, upper(code))`, `customers(store_id, phone)`
+## 5. Auth, Tenancy & Security Model
 
-## Auth & Tenant Scoping (Hardening Phase 2)
+* **Merchant routes (`/v1/merchant/*`)** — `MerchantGuard`: session cookie `posflow_merchant_session` → user (role `merchant`) → tenant (must be `active`). The store is decided **server-side**: `x-store-id` is honored only if that store belongs to the user's tenant (else 403); otherwise the tenant's first store. Services take `storeId` from `@CurrentMerchant()`, never from the request body/query.
+* **Platform routes (`/v1/platform/*`)** — `PlatformGuard`: cookie `posflow_platform_session`, role `platform_admin`.
+* **Storefront routes (`/v1/storefront/*`)** — `StorefrontStoreGuard`: store from `x-store-id` (else `DEFAULT_STORE_ID`); unknown stores and stores of suspended tenants return 404.
+* **Sessions:** 7 days; DB stores only `sha256(token)`. Password change signs out the user's other sessions; platform reset signs out all of them. Suspending a tenant locks its merchants out on the next request.
+* **Passwords:** scrypt (`packages/db/src/password.ts`), min 10 chars; 5 failed logins per email → 15-minute lockout.
+* **Order privacy:** checkout returns a one-time `accessToken`; storefront order pages require it (`x-order-token`), only its hash is stored. Wrong/missing token = same 404 as a missing order.
+* **IDs:** carts, orders, users use crypto-random ids (cart id is the shopper's bearer credential).
+* **Same-origin admin API:** admin browsers call `/api/*` on their own host; `next.config.mjs` rewrites to `API_URL`. Server components call the API directly and forward cookies (`lib/server-auth.ts`). A cross-site API host would silently drop session cookies.
+* **CORS:** explicit origin list with credentials (`CORS_ORIGINS`).
+* **Mass assignment:** the order-status endpoint accepts only `financialStatus` / `fulfillmentStatus` / `orderStatus` with whitelisted values.
 
-* **Merchant routes (`/v1/merchant/*`)** use `MerchantGuard`: session cookie `posflow_merchant_session` → user → tenant. The store is decided **server-side**: `x-store-id` is honored only if that store belongs to the user's tenant (else 403); otherwise the tenant's first store. Services always receive `storeId` from `@CurrentMerchant()`, never from the client.
-* **Platform routes (`/v1/platform/*`)** use `PlatformGuard` (cookie `posflow_platform_session`, role `platform_admin`).
-* **Storefront routes (`/v1/storefront/*`)** use `StorefrontStoreGuard`: store from `x-store-id` (else `DEFAULT_STORE_ID`); unknown or suspended-tenant stores return 404.
-* Suspending a tenant immediately invalidates its merchants' sessions (checked on every request).
-* Admin apps never call the API cross-origin from the browser: they call `/api/*` on their own host, which `next.config.mjs` rewrites to `API_URL`. This keeps session cookies first-party (a cross-site API host would silently drop them).
-* Accounts: `pnpm db:create-user --role platform_admin --email ...` (hidden password prompt). Platform admins create a tenant together with its owner's merchant login.
+---
+
+## 6. Checkout & Inventory Integrity
+
+Checkout is **one transaction** that takes row locks in a fixed order — **cart → variants (sorted by id, `FOR UPDATE`) → discount → customer → store counter** — so concurrent checkouts queue instead of deadlocking.
+
+* **Prices & stock** are read under lock (never trusted from the cart snapshot). Short lines → `409` with an `outOfStock` list. `CHECK (stock >= 0)` is the database-level backstop.
+* **Order numbers:** `stores.next_order_number` incremented inside the transaction → `PF-<n>`, unique per store (`uq_orders_store_number`). Survives API restarts.
+* **Discounts:** `DiscountsService.redeem()` checks active/dates/min-subtotal/usage-limit **and** increments `times_used` in one conditional `UPDATE`; an invalid code rejects checkout (never silently charges more than shown).
+* **Customers:** one `INSERT … ON CONFLICT (store_id, phone) DO UPDATE` inside the transaction; Pakistani mobiles normalized to `+923xxxxxxxxx` (`customers/phone.ts`); VIP / repeat-buyer tags recomputed under the row lock.
+* **Double submit:** the cart row lock + clearing the cart means a second submit finds an empty cart.
+* **Status changes:** order row locked; cancel restocks exactly once; re-opening a cancelled order re-checks stock (`409` if gone). Courier booking is conditional on no existing CN.
+* **Stock adjustments (merchant):** atomic `stock = stock + delta` that refuses to go below 0 — never "set to N", so a concurrent sale is not overwritten. Cart add/update also refuses quantities above stock (early, friendly check only).
+* **Courier:** no Trax/Leopards API integration yet. The CN is generated in POSflow and the 4x6 label is a **packing label** that says so (no fake barcode).
+
+---
+
+## 7. Database Schema Map
+
+All tables have `created_at`; mutable ones have `updated_at` (timestamptz). Money columns are integers in minor units.
+
+| Table | Key columns | Notes |
+| :--- | :--- | :--- |
+| `tenants` | `id`, `name`, `default_currency`, `default_locale`, `status` (`active`/`suspended`) | |
+| `stores` | `id`, `tenant_id`→tenants, `name`, `slug` (UNIQUE), `currency`, `timezone`, `whatsapp_phone` (E.164), `next_order_number` | |
+| `categories` | `id`, `name`, `full_name`, `parent_id`→categories, `level` | Global taxonomy, seeded by migration 0002 |
+| `collections` | `id`, `tenant_id`, `store_id`, `title`, `slug`, `collection_type`, `rules`, `is_published` | UNIQUE (`store_id`,`slug`) |
+| `collection_products` | `collection_id`, `product_id`, `position` | |
+| `products` | `id`, `tenant_id`, `store_id`, `category_id`, `title`, `slug`, `description`, `product_type`, `vendor`, `tags`, `options`, `is_published` | UNIQUE (`store_id`,`slug`) |
+| `product_variants` | `id`, `product_id`, `title`, `sku`, `price_minor`, `compare_at_price_minor`, `stock` | `CHECK (stock >= 0)` |
+| `carts` / `cart_items` | cart: `store_id`, `currency`; item: `variant_id`, `quantity` | Prices are never stored on the cart |
+| `orders` | `store_id`, `order_number`, customer + shipping fields, `payment_method`, `financial_status`, `fulfillment_status`, `order_status`, `courier_*`, `customer_id`, `discount_code`, `discount_minor`, `subtotal/shipping_fee/total_minor`, `notes`, `access_token` | UNIQUE (`store_id`,`order_number`) |
+| `order_items` | `order_id`, `variant_id`, `product_id`, `title`, `variant_title`, `sku`, `unit_price_minor`, `quantity`, `total_minor` | Immutable snapshot (no FK to variants) |
+| `customers` | `store_id`, `phone` (normalized), names, `email`, `orders_count`, `total_spent_minor`, `tags`, `default_address` | UNIQUE (`store_id`,`phone`) |
+| `customer_addresses` | `customer_id`, address fields | Not used by the app yet |
+| `discounts` | `store_id`, `code`, `discount_type` (`percentage`/`fixed_amount`/`free_shipping`), `value`, `min_requirement_type`, `min_subtotal_minor`, `usage_limit`, `times_used`, `starts_at`, `ends_at`, `is_active` | UNIQUE (`store_id`, `upper(code)`) |
+| `users` | `email` (UNIQUE, lowercased), `password_hash`, `role`, `tenant_id` (null for platform admins), `status` | |
+| `sessions` | `id` = sha256(token), `user_id`, `expires_at` | |
+| `schema_migrations` | `id` (file name), `checksum`, `applied_at` | Managed by `db:migrate` |
+
+Unused columns that exist for future features: `discounts.applies_to`, `entitled_*_ids`, `min_quantity`, `once_per_customer`; `collections.rules` (smart collections); `stores.supported_locales`.
+
+---
+
+## 8. API Surface
+
+Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` / `stats`). Errors: `{ statusCode, message }`, 500s add `requestId`.
+
+**Health**
+| Method | Endpoint | Notes |
+| :--- | :--- | :--- |
+| GET | `/health` | Liveness (no DB) |
+| GET | `/health/ready` | Readiness; 503 if the database is unreachable |
+
+**Auth** (`/v1/auth`)
+| Method | Endpoint | Guard / limit |
+| :--- | :--- | :--- |
+| POST | `/merchant/login`, `/platform/login` | public · 10/min per IP |
+| POST | `/merchant/logout`, `/platform/logout` | public |
+| GET | `/merchant/me` (incl. `storeId`, `storeName`), `/platform/me` | session |
+| POST | `/merchant/password`, `/platform/password` | session · 5/min |
+
+**Storefront** (`/v1/storefront`, `StorefrontStoreGuard`)
+| Method | Endpoint | Notes |
+| :--- | :--- | :--- |
+| GET | `/store` | Public store info: name, currency, WhatsApp |
+| GET | `/products`, `/products/:slug` | Published only |
+| GET | `/collections`, `/collections/:slug` | Published only; unpublished products filtered out |
+| GET | `/cart` · POST `/cart/items` (60/min) · PATCH/DELETE `/cart/items/:itemId` | `x-cart-id` header |
+| POST | `/discounts/validate` | 20/min (anti code-guessing) |
+| POST | `/orders/checkout` | 10/min; returns order + one-time `accessToken` |
+| GET | `/orders/:id` | 30/min; requires `x-order-token` |
+| POST | `/orders/:id/verify-whatsapp` | 10/min; requires `x-order-token` |
+
+**Merchant** (`/v1/merchant`, `MerchantGuard`)
+| Method | Endpoint | Notes |
+| :--- | :--- | :--- |
+| GET/PATCH | `/store` | Store name, WhatsApp number |
+| GET | `/orders?limit&cursor&tab&q` | Keyset pages; tabs `all, unverified, pending_dispatch, in_transit, delivered, cancelled`; exact `counts` |
+| GET | `/orders/:id` | |
+| PATCH | `/orders/:id/status`, `/orders/:id/notes` | Whitelisted status fields |
+| POST | `/orders/:id/book-courier`, `/orders/:id/verify-whatsapp` | |
+| GET/POST | `/products` | |
+| PATCH | `/products/:productId` | Details, slug, publish/unpublish |
+| PATCH | `/products/:productId/variants/:variantId` | SKU, title, prices |
+| POST | `/products/:productId/variants/:variantId/stock-adjustments` | `{ delta }` |
+| GET | `/categories` · GET/POST `/collections` | |
+| GET/POST | `/discounts` · PATCH `/discounts/:id` | `{ isActive }` |
+| GET | `/customers?limit&cursor&q`, `/customers/:id` | Store-wide `stats`; search by name/email/phone digits |
+| GET | `/analytics` | SQL aggregates, days in store timezone |
+
+**Platform** (`/v1/platform`, `PlatformGuard`)
+| Method | Endpoint | Notes |
+| :--- | :--- | :--- |
+| GET | `/analytics` | Active tenants/stores, 30-day GMV; ARR & latency `null` (not tracked) |
+| GET/POST | `/tenants` | Create = tenant + store + owner merchant login, in one transaction |
+| PATCH | `/tenants/:id/status` | `active` / `suspended` |
+| GET | `/tenants/:id/users` | |
+| POST | `/users/:id/password` | Reset a merchant's password · 10/min |
+
+---
+
+## 9. Operations
+
+* **Schema changes:** edit `packages/db/src/index.ts` **and** add a new numbered file in `packages/db/migrations`. `pnpm db:migrate` applies pending files (one transaction each, checksum-recorded, advisory-locked) and refuses if an applied file was edited. `pnpm db:check` fails on drift between the database and the Drizzle schema. `drizzle-kit` is for Studio only.
+* **Data scripts:** `db:seed` (demo store; refuses in production), `db:create-user`, `db:reset-password` (hidden prompts), `db:status`, `db:reset --confirm` (drops everything; refuses in production).
+* **Rate limiting:** global per-IP limit (`RATE_LIMIT_PER_MINUTE`, default 300) + per-route limits (§8). `429` with `Retry-After`. In-memory → move to Redis before running several API instances. `TRUST_PROXY` = number of proxies in front of the API.
+* **Observability:** pino JSON request logs (cookies/tokens redacted); `x-request-id` on every response; unexpected errors logged with that id and returned as a generic 500 carrying it; graceful shutdown hooks.
+* **Scale:** orders/customers keyset-paginated (default 50, max 200); analytics and tab counts computed by Postgres.
+* **Tests:**
+  * `pnpm --filter api test` — unit (phone normalization, discount math, pagination), no DB.
+  * `E2E_ALLOW_WRITES=true pnpm --filter api test:e2e` — builds and boots the API on a spare port, runs 14 end-to-end checks (auth, tenant isolation, 8-buyer last-unit race, coupon race, unique order numbers, customer upsert, double submit, order tokens, restock-once, pagination, analytics, stock adjust, WhatsApp validation, password change), then deletes everything it created. **Writes to `DATABASE_URL`** — use a Neon branch.
 
 ### Environment variables
 | Variable | App | Default | Purpose |
 | :--- | :--- | :--- | :--- |
-| `CORS_ORIGINS` | api | `http://localhost:3000,3001,3002` | Comma-separated origins allowed to send cookies |
-| `COOKIE_DOMAIN` | api | (host-only) | Optional; normally unset because admin apps proxy the API same-origin |
-| `API_URL` | merchant-admin, platform-admin | `http://127.0.0.1:4000` | Backend for the `/api/*` rewrite and for server components |
-| `DEFAULT_STORE_ID` | api | `store_default` | Store used when a storefront request has no `x-store-id` |
-| `NEXT_PUBLIC_STORE_ID` | web | `store_default` | Store this storefront deployment sells for |
-| `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | Links to the live storefront |
-| `NEXT_PUBLIC_MERCHANT_ADMIN_URL` | platform-admin | `http://localhost:3001` | Link to the merchant portal |
-
-## Checkout Integrity (Hardening Phase 3)
-
-Checkout is a single transaction that takes row locks in a fixed order — **cart → variants (sorted by id, `FOR UPDATE`) → discount → customer → store counter** — so concurrent checkouts queue instead of deadlocking (Invariant #5).
-* **Stock:** verified under lock; short lines return `409` with an `outOfStock` list. `CHECK (stock >= 0)` on `product_variants` is the last line of defence. Cart add/update also refuses quantities above stock (friendly early check only).
-* **Order numbers:** `stores.next_order_number`, incremented inside the transaction → `PF-<n>`, unique per store (`uq_orders_store_number`).
-* **Discounts:** `DiscountsService.redeem()` checks every rule and increments `times_used` in one `UPDATE … WHERE times_used < usage_limit`, so limits hold under concurrency.
-* **Customers:** one `INSERT … ON CONFLICT (store_id, phone) DO UPDATE` per order; Pakistani mobiles are normalized to `+923xxxxxxxxx`.
-* **Status changes:** the order row is locked; cancel restocks once; re-opening a cancelled order re-checks stock (`409` if gone). Courier booking is conditional on no existing CN.
-
-## Operational Safety (Hardening Step 3)
-
-* **Schema changes:** numbered SQL files in `packages/db/migrations`, applied by `pnpm db:migrate` (one transaction per file, recorded with a checksum in `schema_migrations`, advisory-locked). `pnpm db:check` fails if the database and the Drizzle schema in `index.ts` disagree. Demo data lives only in `pnpm db:seed`, which refuses to run in production. `drizzle-kit` is used for Studio only.
-* **Rate limiting:** global per-IP limit (`RATE_LIMIT_PER_MINUTE`, default 300/min) plus tighter per-route limits (checkout 10/min, coupon check 20/min, login 10/min, password change 5/min). In-memory: move to Redis before running several API instances. `TRUST_PROXY` = number of proxies in front of the API.
-* **Observability:** JSON request logs (pino) with cookies/tokens redacted; every response has `x-request-id`; unexpected errors are logged with that id and returned as a generic 500 carrying it. `GET /health` (liveness) and `GET /health/ready` (database, 503 when down).
-* **Scale:** merchant orders and customers are keyset-paginated (`?limit=&cursor=`) with server-side tabs/search and exact tab counts; analytics are Postgres aggregates grouped by the store's timezone.
-* **Tests:** `pnpm --filter api test` (unit, no DB) and `E2E_ALLOW_WRITES=true pnpm --filter api test:e2e` (boots the API, 14 end-to-end checks incl. concurrency; cleans up after itself).
-
-## 5. API Surface (Storefront v1)
-
-| Method | Endpoint | Description | Performance Target |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Instant health check & uptime ping | `< 2ms` |
-| `GET` | `/v1/storefront/products` | List all published products with variants | `< 15ms` |
-| `GET` | `/v1/storefront/products/:slug` | Get single product detail by slug with variants | `< 10ms` |
+| `DATABASE_URL` | api, db | — | Postgres connection (Neon: `sslmode=require`) |
+| `PORT` | api | `4000` | |
+| `NODE_ENV` | all | `development` | `production` = secure cookies, rate limits forced on, seed/reset refused |
+| `CORS_ORIGINS` | api | `http://localhost:3000,3001,3002` | Browser origins allowed (with credentials) |
+| `DEFAULT_STORE_ID` | api | `store_default` | Storefront store when no `x-store-id` |
+| `TRUST_PROXY` | api | (off) | Proxy hop count for real client IPs |
+| `RATE_LIMIT_PER_MINUTE` | api | `300` | Global per-IP limit |
+| `RATE_LIMIT_DISABLED` | api | — | Test suite only; ignored in production |
+| `LOG_LEVEL` | api | `info` | pino level |
+| `COOKIE_DOMAIN` | api | (host-only) | Optional; normally unset |
+| `API_URL` | merchant-admin, platform-admin | `http://127.0.0.1:4000` | Target of the `/api/*` rewrite and server-side calls |
+| `NEXT_PUBLIC_API_URL` | web | `http://127.0.0.1:4000` | Storefront calls the API directly |
+| `NEXT_PUBLIC_STORE_ID` | web | `store_default` | Store this storefront sells for |
+| `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | "View storefront" links |
+| `NEXT_PUBLIC_MERCHANT_ADMIN_URL` | platform-admin | `http://localhost:3001` | "Merchant portal" links |
 
 ---
 
-## 6. Implementation Log & Changelog
+## 10. Implementation Log & Changelog
 
-### Phase 1: Foundation & The Speed Core (COMPLETED)
-- [x] Converted repository from default npm to high-performance **pnpm monorepo**.
-- [x] Configured `pnpm-workspace.yaml` and `.npmrc` workspace linking.
-- [x] Built `@repo/db` package with **Drizzle ORM** and pure ESM compatibility.
-- [x] Designed core catalog tables (`tenants`, `stores`, `products`, `product_variants`) with composite performance indexes.
-- [x] Resolved ESM circular dependency issues by isolating `relations.ts`.
-- [x] Configured `apps/api` with **NestJS + Fastify HTTP Adapter** and enabled global CORS.
-- [x] Wired dependency injection for Drizzle client into NestJS (`DbModule`).
-- [x] Implemented `ProductsController` and `ProductsService` for storefront catalog reads.
-- [x] Added root convenience scripts: `pnpm db:push`, `pnpm db:generate`, `pnpm db:migrate`, `pnpm db:studio`, `pnpm db:seed`.
+### Original build — Phases 1–5
+Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart drawer, COD checkout, confirmation), merchant admin (dashboard, orders, courier dispatch, label), platform admin. A 2026-09-26 code review found this build did **not** run as described: the API crashed on boot (duplicate route), merchant-admin failed type-checking, no endpoint had authentication, several queries ignored the tenant, checkout had no transaction or stock check, and many screens showed mock/demo data or reported success on failure. The hardening work below fixed that. Claims from the original log that were untrue or have been replaced: "graceful offline resilience via mock data" (removed — Invariant 7), "store switcher" (never built), `/v1/admin/*` routes (removed), "Thermal Airway Bill" (now an honest packing label), `db:generate`/`init-db.ts` (replaced by SQL migrations).
 
-### Phase 2: Live Storefront Integration (COMPLETED)
-- [x] Connected `apps/web` (Next.js 15) to Fastify API via Server Components.
-- [x] Created `lib/api.ts` with minor-unit price formatting (`formatPrice`) and ISR revalidation.
-- [x] Implemented modern dark-mode catalog homepage with zero client-side JavaScript overhead.
-- [x] Implemented `/products/[slug]` Product Detail Page (PDP) with interactive `VariantSelector` island.
-- [x] Added COD (Cash on Delivery) flow trigger and express shipping indicators.
-- [x] Tested graceful offline resilience (fallback mock data if Postgres is momentarily disconnected).
+### Hardening Phase 1 — API boots, builds pass, no fake data *(commit `2490a95`)*
+- [x] Removed the duplicate `GET /v1/merchant/analytics` route that crashed startup; fixed merchant-admin type errors; `strictNullChecks` in the API.
+- [x] Removed in-memory carts/orders and demo catalog/analytics fallbacks; failures return real errors.
+- [x] Checkout in a transaction; invalid discount codes reject checkout; order-status field whitelist; restock only on a real cancel.
+- [x] `tenant_id` derived from the owning store; analytics scoped to the store; real platform metrics; tenant create/suspend actually call the API.
+- [x] Admin UIs surface API errors; slug auto-generation bug fixed; courier CN stored in courier columns.
 
-### Phase 3: The Cart System (COMPLETED)
-- [x] Designed `carts` and `cart_items` tables with composite indexes in `@repo/db`.
-- [x] Built Fastify `CartService` with backend-authoritative subtotal calculation in integer minor units.
-- [x] Implemented REST endpoints: `GET /cart`, `POST /cart/items`, `PATCH /cart/items/:id`, `DELETE /cart/items/:id`.
-- [x] Created `CartProvider` React context with `localStorage` session persistence.
-- [x] Built interactive Slide-over Cart Drawer (`CartDrawer.tsx`) with quantity (+ / -) controls, trash, and subtotal.
-- [x] Added dynamic header cart trigger with live item count badge.
-- [x] Connected PDP `VariantSelector` to trigger instant add-to-cart and slide-over opening.
+### Hardening Phase 2 — Authentication & tenant scoping *(`11246e1`, `5be79cf`)*
+- [x] `users`/`sessions`, scrypt, HttpOnly cookies, login lockout; Merchant/Platform/Storefront guards (§5).
+- [x] Customers, discounts and order actions scoped to the store; order access tokens; random ids; CORS allow-list.
+- [x] Unique indexes per store; tenant_id repair; login pages, `proxy.ts`, sign-out; `db:create-user`; `db:reset --confirm`.
+- [x] Fix: admin apps proxy the API same-origin — the browser was dropping cross-site session cookies.
 
-### Phase 4: One-Page Checkout & Order Placement (COMPLETED)
-- [x] Designed `orders` table with status decoupling (`financialStatus`, `fulfillmentStatus`, `orderStatus`).
-- [x] Designed `order_items` with immutable frozen snapshots (`title`, `variantTitle`, `sku`, `unitPriceMinor`, `totalMinor`).
-- [x] Implemented `OrdersService` and `OrdersController` with `POST /orders/checkout` and `GET /orders/:id`.
-- [x] Created One-Page Checkout UI (`/checkout`) optimized for Pakistan/MENA (Phone/WhatsApp first, City selector, COD default).
-- [x] Created Order Confirmation & Receipt Screen (`/order-confirmation/[id]`) with live tracking and COD instructions.
-- [x] Updated Slide-over Cart Drawer to route seamlessly into checkout flow.
-- [x] Automated table migration for Neon PostgreSQL (now `packages/db/migrations`, see Operational Safety).
+### Hardening Step 1 — Honest UI *(`2cc3d3b`)*
+- [x] Replaced hardcoded figures: COD "risk" box (now real phone/metro/WhatsApp checks), analytics "+14.8%/2.4 units/100%", label courier/shipper/weight/barcode, product fallbacks, platform "Active Tenants".
+- [x] Real store name in the sidebar; customers `?search=`; dashboard links to the order.
 
-### Phase 5: Courier Integration & Merchant Admin (COMPLETED)
-- [x] Configured shadcn/ui design system with Tailwind CSS and official `components.json`.
-- [x] Implemented reusable shadcn component suite in `components/ui/` (`Button`, `Card`, `Badge`, `Table`, `Input`, `Label`, `Tabs`, `Separator`).
-- [x] Created Merchant Admin Layout (`/admin`) with store switcher, sidebar navigation, and live metrics.
-- [x] Built Executive Dashboard with 4 KPIs: Gross Revenue, Total Orders, COD Cash in Transit, RTO Return Rate.
-- [x] Implemented Orders Data Table with tabs filtering (`All`, `Pending COD`, `In Transit`, `Delivered`, `Cancelled`).
-- [x] Built 1-Click Courier Dispatch system generating Consignment Numbers (CN) for Trax / Leopards.
-- [x] Created Pakistan Express Thermal Airway Bill label modal ready for 4x6 packing print.
-- [x] Built backend Admin APIs in Fastify: `GET /v1/admin/orders`, `GET /v1/admin/analytics`, `PATCH /v1/admin/orders/:id/status`, `POST /v1/admin/orders/:id/book-courier`.
+### Hardening Phase 3 — Race-safe checkout *(`8aeffd8`)* — see §6
+- [x] Sorted `FOR UPDATE` locks, stock check with `409 outOfStock`, `CHECK (stock >= 0)`.
+- [x] Per-store DB order numbers; atomic discount redemption; customer upsert; locked status transitions.
 
-### Phase 6: Product Catalog & Inventory Manager (NEXT STEP)
-- [ ] Admin "Add Product" form with Shopify-style options (Size, Color) generating permutation variants.
-- [ ] Real-time inventory adjustment & stock sync.
-- [ ] Image upload & gallery support.
-- [ ] Multi-store toggle & tenant switching.
+### Hardening Step 2 — Merchant features *(`807d1c4`)*
+- [x] Store settings (name, WhatsApp) + storefront header/WhatsApp from the API (was hardcoded `923001234567`).
+- [x] Product editor: details, slug, publish/unpublish, variant SKU/prices, atomic stock adjustments.
+- [x] Discount on/off; password change (merchant & platform); platform reset of merchant passwords; `db:reset-password`.
+
+### Hardening Step 3 — Operational safety *(`cfeb602`)* — see §9
+- [x] Rate limiting, structured logging, request ids, error filter, `/health/ready`.
+- [x] SQL migration system (`db:migrate`, `db:status`, `db:check`, `db:seed`); migration 0003 fixed a drift `db:check` found.
+- [x] Keyset pagination with server-side tabs/search/counts; SQL-aggregate analytics in store timezone.
+- [x] Unit + end-to-end test suites (the e2e suite caught two bugs fixed in this step).
+- [x] Real README and `apps/api/.env.example`.
+
+### Next — Step 4: Launch
+- [ ] Production database (separate Neon project/branch) + `db:migrate`; point-in-time restore enabled and a restore tested.
+- [ ] Hosting for API and the three Next apps; domains + HTTPS; production env vars (§9).
+- [ ] Push the repository to a private remote (currently local only).
+
+### Backlog (after launch)
+- [ ] Call `revalidateTag` on product/store edits (Invariant 4) and measure the latency SLAs (Invariant 3).
+- [ ] Courier API integration (Trax/Leopards) for real CNs and airway bills.
+- [ ] Subscription plans & billing (platform ARR is currently `null`).
+- [ ] Product images; collection editing / assigning products after creation; multi-store switcher UI.
+- [ ] Rate limits and lockouts in Redis for multi-instance; error tracking (e.g. Sentry); ESLint configs for the admin apps.
+- [ ] Email-based "forgot password" (needs an email provider).
+- [ ] Remove unused `apps/docs` and `packages/ui`.
 
 ---
 
-## 7. Instructions for Future AI & Engineers
-1. **Never use Prisma:** Drizzle ORM is frozen as the query engine for speed and memory efficiency.
-2. **Never install Fastify packages in root:** Keep backend packages in `apps/api` and database schema in `packages/db`.
-3. **Always update this file** whenever a new module, table, or architectural decision is implemented.
+## 11. Instructions for Future AI & Engineers
+1. **Never use Prisma:** Drizzle ORM is the query layer.
+2. **Never install Fastify packages in root:** backend packages in `apps/api`, schema in `packages/db`.
+3. **Always update this file** when a module, table, route or architectural decision changes.
+4. **Schema changes = two edits:** `packages/db/src/index.ts` + a new numbered SQL migration. Never edit an applied migration. Run `pnpm db:check`.
+5. **Never trust the client for tenancy:** merchant services take `storeId` from `@CurrentMerchant()`; storefront services from `@StorefrontStore()`.
+6. **No fake data, no fake success (Invariant 7):** no mock fallbacks, no hardcoded metrics, no "optimistic" success on errors. Show the real error.
+7. **Anything touching stock, order numbers, discounts or customers at checkout** goes inside the checkout transaction and follows the lock order in §6.
+8. **Money is integer minor units** end to end; convert to rupees only for display.
+9. **Run the tests** (`pnpm --filter api test`, and the e2e suite against a Neon branch) before merging.
