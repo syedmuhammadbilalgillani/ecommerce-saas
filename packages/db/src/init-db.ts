@@ -310,6 +310,27 @@ async function initDatabase() {
     `;
     await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_users_email" ON "users" ("email");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_users_tenant" ON "users" ("tenant_id");`;
+
+    // Per-store order numbering (replaces the API's in-memory counter, which reset on restart).
+    await sql`ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "next_order_number" integer DEFAULT 1001 NOT NULL;`;
+    // Start each store after its highest existing "PF-<n>" number so nothing is reused.
+    await sql`
+      UPDATE "stores" s SET "next_order_number" = m.next
+      FROM (
+        SELECT "store_id", MAX(substring("order_number" FROM '[0-9]+$')::int) + 1 AS next
+        FROM "orders" WHERE "order_number" ~ '[0-9]+$' GROUP BY "store_id"
+      ) m
+      WHERE s."id" = m."store_id" AND s."next_order_number" < m.next;
+    `;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_orders_store_number" ON "orders" ("store_id", "order_number");`;
+
+    // Stock can never go negative, even if application code has a bug.
+    await sql`
+      DO $$ BEGIN
+        ALTER TABLE "product_variants" ADD CONSTRAINT "chk_variants_stock_nonnegative" CHECK ("stock" >= 0);
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+    `;
     await sql`CREATE INDEX IF NOT EXISTS "idx_sessions_user" ON "sessions" ("user_id");`;
 
     // Performance Indexes

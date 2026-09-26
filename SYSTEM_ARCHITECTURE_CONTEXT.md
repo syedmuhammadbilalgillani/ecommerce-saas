@@ -174,6 +174,15 @@ ecommerce-saas/
 | `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | Links to the live storefront |
 | `NEXT_PUBLIC_MERCHANT_ADMIN_URL` | platform-admin | `http://localhost:3001` | Link to the merchant portal |
 
+## Checkout Integrity (Hardening Phase 3)
+
+Checkout is a single transaction that takes row locks in a fixed order — **cart → variants (sorted by id, `FOR UPDATE`) → discount → customer → store counter** — so concurrent checkouts queue instead of deadlocking (Invariant #5).
+* **Stock:** verified under lock; short lines return `409` with an `outOfStock` list. `CHECK (stock >= 0)` on `product_variants` is the last line of defence. Cart add/update also refuses quantities above stock (friendly early check only).
+* **Order numbers:** `stores.next_order_number`, incremented inside the transaction → `PF-<n>`, unique per store (`uq_orders_store_number`).
+* **Discounts:** `DiscountsService.redeem()` checks every rule and increments `times_used` in one `UPDATE … WHERE times_used < usage_limit`, so limits hold under concurrency.
+* **Customers:** one `INSERT … ON CONFLICT (store_id, phone) DO UPDATE` per order; Pakistani mobiles are normalized to `+923xxxxxxxxx`.
+* **Status changes:** the order row is locked; cancel restocks once; re-opening a cancelled order re-checks stock (`409` if gone). Courier booking is conditional on no existing CN.
+
 ## 5. API Surface (Storefront v1)
 
 | Method | Endpoint | Description | Performance Target |

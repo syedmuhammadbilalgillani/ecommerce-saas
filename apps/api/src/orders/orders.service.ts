@@ -1,10 +1,25 @@
-import { Inject, Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { DRIZZLE } from '../db/db.module';
 import { hashSecret, newSecret } from '../auth/session-token';
-import { resolveTenantId, type DbExecutor } from '../db/store-context';
-import { type Database, orders, orderItems, cartItems, productVariants, eq, and, desc, sql } from '@repo/db';
-import { CartService } from '../cart/cart.service';
+import type { DbExecutor } from '../db/store-context';
+import {
+  type Database,
+  orders,
+  orderItems,
+  carts,
+  cartItems,
+  products,
+  productVariants,
+  stores,
+  eq,
+  and,
+  asc,
+  desc,
+  inArray,
+  isNull,
+  sql,
+} from '@repo/db';
 import { DiscountsService } from '../discounts/discounts.service';
 import { CustomersService } from '../customers/customers.service';
 
@@ -77,8 +92,12 @@ const ALLOWED_STATUS_VALUES: Record<keyof OrderStatusUpdate, readonly string[]> 
   orderStatus: ['open', 'closed', 'cancelled'],
 };
 
-// TODO(phase 3): replace with a DB-generated per-store sequence; this resets on restart.
-let ORDER_COUNTER = 1001;
+export interface OutOfStockLine {
+  variantId: string;
+  title: string;
+  requested: number;
+  available: number;
+}
 
 @Injectable()
 export class OrdersService {
@@ -86,7 +105,6 @@ export class OrdersService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
-    private readonly cartService: CartService,
     private readonly discountsService: DiscountsService,
     private readonly customersService: CustomersService,
   ) {}
@@ -109,42 +127,120 @@ export class OrdersService {
       throw new BadRequestException('Missing required fields: Name, Phone, Address, and City are required');
     }
 
-    // 1. Fetch authoritative cart
-    const cart = await this.cartService.getCart(cartId);
-    if (!cart || cart.items.length === 0) {
-      throw new BadRequestException('Cannot checkout with an empty cart');
-    }
-    if (cart.storeId !== storeId) {
-      throw new BadRequestException('Cart does not belong to this store');
-    }
-
-    const tenantId = await resolveTenantId(this.db, storeId);
-    const subtotalMinor = cart.subtotalMinor;
-    const shippingFeeMinor = 0; // Free delivery across Pakistan
-
-    // 2. Validate the promo code. An invalid code rejects checkout instead of silently
-    // charging the customer more than the total they were shown.
-    let discountCode: string | null = null;
-    let discountMinor = 0;
-    if (dto.discountCode) {
-      const discResult = await this.discountsService.validateDiscount(dto.discountCode, subtotalMinor, storeId);
-      discountCode = discResult.code;
-      discountMinor = discResult.discountAmountMinor;
-    }
-
-    const totalMinor = Math.max(0, subtotalMinor - discountMinor + shippingFeeMinor);
     const paymentMethod = dto.paymentMethod || 'cod';
     const orderId = this.generateId('ord');
-    const orderNumber = `PF-${ORDER_COUNTER++}`;
     const accessToken = newSecret(24);
+    const shippingFeeMinor = 0; // Free delivery across Pakistan
 
-    // 3. Persist order, snapshots, stock and cart clear atomically.
-    await this.db.transaction(async (tx) => {
+    // Everything below is one transaction. Locks are always taken in the same order
+    // (cart -> variants sorted by id -> discount -> customer -> store counter) so concurrent
+    // checkouts queue up instead of deadlocking, and nothing is half-written on failure.
+    const orderNumber = await this.db.transaction(async (tx) => {
+      // 1. Lock the cart: a double-submitted checkout waits here, then finds the cart empty.
+      const [cart] = await tx.select().from(carts).where(eq(carts.id, cartId)).for('update');
+      if (!cart || cart.storeId !== storeId) {
+        throw new BadRequestException('Cart not found for this store');
+      }
+      const lines = await tx.select().from(cartItems).where(eq(cartItems.cartId, cartId));
+      if (lines.length === 0) {
+        throw new BadRequestException('Cannot checkout with an empty cart');
+      }
+
+      // 2. Lock every variant being bought (sorted by id) and read authoritative price + stock.
+      const qtyByVariant = new Map<string, number>();
+      for (const line of lines) {
+        qtyByVariant.set(line.variantId, (qtyByVariant.get(line.variantId) ?? 0) + line.quantity);
+      }
+      const variantIds = [...qtyByVariant.keys()].sort();
+      const locked = await tx
+        .select({ variant: productVariants, product: products })
+        .from(productVariants)
+        .innerJoin(products, eq(products.id, productVariants.productId))
+        .where(inArray(productVariants.id, variantIds))
+        .orderBy(asc(productVariants.id))
+        .for('update', { of: productVariants });
+      const byId = new Map(locked.map((row) => [row.variant.id, row]));
+
+      const outOfStock: OutOfStockLine[] = [];
+      for (const [variantId, requested] of qtyByVariant) {
+        const row = byId.get(variantId);
+        if (!row || row.product.storeId !== storeId || !row.product.isPublished) {
+          outOfStock.push({ variantId, title: row?.product.title ?? 'Unavailable item', requested, available: 0 });
+        } else if (row.variant.stock < requested) {
+          outOfStock.push({
+            variantId,
+            title: `${row.product.title} (${row.variant.title})`,
+            requested,
+            available: row.variant.stock,
+          });
+        }
+      }
+      if (outOfStock.length > 0) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: `Not enough stock: ${outOfStock.map((l) => `${l.title} — ${l.available} left`).join('; ')}`,
+          outOfStock,
+        });
+      }
+
+      const snapshot = variantIds.map((variantId) => {
+        const { variant, product } = byId.get(variantId)!;
+        const quantity = qtyByVariant.get(variantId)!;
+        return {
+          variantId,
+          productId: product.id,
+          title: product.title,
+          variantTitle: variant.title,
+          sku: variant.sku,
+          unitPriceMinor: variant.priceMinor,
+          quantity,
+          totalMinor: variant.priceMinor * quantity,
+        };
+      });
+      const subtotalMinor = snapshot.reduce((sum, line) => sum + line.totalMinor, 0);
+
+      // 3. Redeem the promo code atomically (usage limit can't be exceeded under concurrency).
+      // An invalid code rejects checkout rather than silently charging more than was shown.
+      let discountCode: string | null = null;
+      let discountMinor = 0;
+      if (dto.discountCode) {
+        const redeemed = await this.discountsService.redeem(tx, dto.discountCode, storeId, subtotalMinor);
+        discountCode = redeemed.code;
+        discountMinor = redeemed.discountAmountMinor;
+      }
+      const totalMinor = Math.max(0, subtotalMinor - discountMinor + shippingFeeMinor);
+
+      // 4. Take the next per-store order number (this row lock serializes numbering only).
+      const [store] = await tx
+        .update(stores)
+        .set({ nextOrderNumber: sql`${stores.nextOrderNumber} + 1` })
+        .where(eq(stores.id, storeId))
+        .returning({ tenantId: stores.tenantId, taken: sql<number>`${stores.nextOrderNumber} - 1` });
+      const number = `PF-${store.taken}`;
+      const tenantId = store.tenantId;
+
+      // 5. CRM attribution in the same transaction, so stats always match committed orders.
+      const customerId = await this.customersService.syncCustomerFromOrder(
+        tx,
+        {
+          name: dto.customerName,
+          phone: dto.customerPhone,
+          email: dto.customerEmail,
+          address: { address1: dto.shippingAddressLine1, city: dto.shippingCity, province: dto.shippingProvince },
+          orderTotalMinor: totalMinor,
+        },
+        storeId,
+        tenantId
+      );
+
+      // 6. Persist the order with immutable line snapshots.
       await tx.insert(orders).values({
         id: orderId,
         tenantId,
         storeId,
-        orderNumber,
+        orderNumber: number,
+        customerId,
         discountCode,
         discountMinor,
         customerName: dto.customerName.trim(),
@@ -168,52 +264,22 @@ export class OrdersService {
       });
 
       await tx.insert(orderItems).values(
-        cart.items.map((item) => ({
-          id: this.generateId('oi'),
-          tenantId,
-          orderId,
-          variantId: item.variantId,
-          productId: item.productId,
-          title: item.title,
-          variantTitle: item.variantTitle,
-          sku: item.sku,
-          unitPriceMinor: item.priceMinor,
-          quantity: item.quantity,
-          totalMinor: item.totalMinor,
-        }))
+        snapshot.map((line) => ({ id: this.generateId('oi'), tenantId, orderId, ...line }))
       );
 
-      // TODO(phase 3): lock variants in sorted order and reject when stock is insufficient.
-      await this.adjustStock(tx, cart.items, 'deduct');
-
-      if (discountCode) {
-        await this.discountsService.incrementUsage(discountCode, storeId, tx);
+      // 7. Deduct stock exactly (already verified under lock; the DB CHECK is a last line of defence).
+      for (const line of snapshot) {
+        await tx
+          .update(productVariants)
+          .set({ stock: sql`${productVariants.stock} - ${line.quantity}`, updatedAt: new Date() })
+          .where(eq(productVariants.id, line.variantId));
       }
 
       await tx.delete(cartItems).where(eq(cartItems.cartId, cartId));
+      return number;
     });
 
     this.logger.log(`Order ${orderNumber} (${orderId}) created`);
-
-    // 4. CRM attribution runs after commit so a failed order never inflates customer stats.
-    try {
-      const customerId = await this.customersService.syncCustomerFromOrder(
-        {
-          name: dto.customerName,
-          phone: dto.customerPhone,
-          email: dto.customerEmail,
-          address: { address1: dto.shippingAddressLine1, city: dto.shippingCity, province: dto.shippingProvince },
-          orderTotalMinor: totalMinor,
-        },
-        storeId,
-        tenantId
-      );
-      if (customerId) {
-        await this.db.update(orders).set({ customerId }).where(eq(orders.id, orderId));
-      }
-    } catch (err: any) {
-      this.logger.warn(`Customer sync failed for order ${orderNumber}: ${err.message}`);
-    }
 
     return { order: await this.getStoreOrder(storeId, orderId), accessToken };
   }
@@ -274,13 +340,16 @@ export class OrdersService {
     }
 
     await this.db.transaction(async (tx) => {
-      const current = await tx.query.orders.findFirst({
-        where: and(eq(orders.id, orderId), eq(orders.storeId, storeId)),
-        with: { items: true },
-      });
+      // Lock the order row so two concurrent cancels can't both restock.
+      const [current] = await tx
+        .select()
+        .from(orders)
+        .where(and(eq(orders.id, orderId), eq(orders.storeId, storeId)))
+        .for('update');
       if (!current) {
         throw new NotFoundException(`Order with id '${orderId}' not found`);
       }
+      const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 
       await tx.update(orders).set({ ...patch, updatedAt: new Date() }).where(eq(orders.id, orderId));
 
@@ -288,9 +357,10 @@ export class OrdersService {
       const wasCancelled = current.orderStatus === 'cancelled';
       const isCancelled = (patch.orderStatus ?? current.orderStatus) === 'cancelled';
       if (!wasCancelled && isCancelled) {
-        await this.adjustStock(tx, current.items, 'restock');
+        await this.restock(tx, items);
       } else if (wasCancelled && !isCancelled) {
-        await this.adjustStock(tx, current.items, 'deduct');
+        // Re-opening takes the goods back out of stock — only if they are still there.
+        await this.deductWithCheck(tx, items);
       }
     });
 
@@ -342,26 +412,47 @@ export class OrdersService {
         fulfillmentStatus: 'in_transit',
         updatedAt: new Date(),
       })
-      .where(eq(orders.id, orderId));
+      // Conditional so two simultaneous clicks can't both book.
+      .where(and(eq(orders.id, orderId), isNull(orders.courierTrackingNumber)));
 
     return this.getStoreOrder(storeId, orderId);
   }
 
-  private async adjustStock(
-    executor: DbExecutor,
-    items: Array<{ variantId: string | null; quantity: number }>,
-    direction: 'deduct' | 'restock'
-  ) {
+  private async restock(executor: DbExecutor, items: Array<{ variantId: string | null; quantity: number }>) {
     for (const item of items) {
       if (!item.variantId) continue;
-      const stock =
-        direction === 'deduct'
-          ? sql`GREATEST(0, ${productVariants.stock} - ${item.quantity})`
-          : sql`${productVariants.stock} + ${item.quantity}`;
       await executor
         .update(productVariants)
-        .set({ stock, updatedAt: new Date() })
+        .set({ stock: sql`${productVariants.stock} + ${item.quantity}`, updatedAt: new Date() })
         .where(eq(productVariants.id, item.variantId));
+    }
+  }
+
+  /** Locks the variants (sorted by id), verifies stock, then deducts. Throws 409 if short. */
+  private async deductWithCheck(executor: DbExecutor, items: Array<{ variantId: string | null; quantity: number; title: string }>) {
+    const lines = items.filter((i): i is typeof i & { variantId: string } => !!i.variantId);
+    if (lines.length === 0) return;
+
+    const locked = await executor
+      .select({ id: productVariants.id, stock: productVariants.stock })
+      .from(productVariants)
+      .where(inArray(productVariants.id, [...new Set(lines.map((l) => l.variantId))]))
+      .orderBy(asc(productVariants.id))
+      .for('update');
+    const stockById = new Map(locked.map((v) => [v.id, v.stock]));
+
+    const short = lines.filter((l) => (stockById.get(l.variantId) ?? 0) < l.quantity);
+    if (short.length > 0) {
+      throw new ConflictException(
+        `Cannot re-open: not enough stock for ${short.map((l) => `${l.title} (${stockById.get(l.variantId) ?? 0} left)`).join(', ')}`
+      );
+    }
+
+    for (const line of lines) {
+      await executor
+        .update(productVariants)
+        .set({ stock: sql`${productVariants.stock} - ${line.quantity}`, updatedAt: new Date() })
+        .where(eq(productVariants.id, line.variantId));
     }
   }
 

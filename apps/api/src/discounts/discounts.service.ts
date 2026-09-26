@@ -1,7 +1,9 @@
 import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
 import { resolveTenantId, type DbExecutor } from '../db/store-context';
-import { type Database, discounts, eq, and, sql } from '@repo/db';
+import { type Database, discounts, eq, and, or, lt, lte, gt, ne, isNull, sql } from '@repo/db';
+
+type DiscountRow = typeof discounts.$inferSelect;
 
 export interface ValidateDiscountResult {
   valid: boolean;
@@ -88,17 +90,7 @@ export class DiscountsService {
     }
 
     // 4. Calculate discount amount in minor units
-    let discountAmountMinor = 0;
-    let freeShipping = false;
-
-    if (discount.discountType === 'percentage') {
-      discountAmountMinor = Math.round((subtotalMinor * discount.value) / 100);
-    } else if (discount.discountType === 'fixed_amount') {
-      discountAmountMinor = Math.min(discount.value, subtotalMinor);
-    } else if (discount.discountType === 'free_shipping') {
-      freeShipping = true;
-      discountAmountMinor = 0;
-    }
+    const { discountAmountMinor, freeShipping } = this.computeAmount(discount, subtotalMinor);
 
     return {
       valid: true,
@@ -179,12 +171,52 @@ export class DiscountsService {
     return created[0];
   }
 
-  async incrementUsage(code: string, storeId: string, executor: DbExecutor = this.db) {
-    await executor
+  /**
+   * Checkout-time redemption. Checks every rule AND increments times_used in one UPDATE,
+   * so concurrent checkouts can never push a code past its usage limit.
+   * Must run inside the checkout transaction so a failed order rolls the usage back.
+   */
+  async redeem(
+    executor: DbExecutor,
+    rawCode: string,
+    storeId: string,
+    subtotalMinor: number
+  ): Promise<{ code: string; discountAmountMinor: number; freeShipping: boolean }> {
+    const code = (rawCode || '').trim().toUpperCase();
+    const now = new Date();
+
+    const [redeemed] = await executor
       .update(discounts)
-      .set({
-        timesUsed: sql`${discounts.timesUsed} + 1`,
-      } as any)
-      .where(and(eq(discounts.storeId, storeId), eq(sql`UPPER(${discounts.code})`, code.toUpperCase())));
+      .set({ timesUsed: sql`${discounts.timesUsed} + 1`, updatedAt: now })
+      .where(
+        and(
+          eq(discounts.storeId, storeId),
+          eq(sql`UPPER(${discounts.code})`, code),
+          eq(discounts.isActive, true),
+          lte(discounts.startsAt, now),
+          or(isNull(discounts.endsAt), gt(discounts.endsAt, now)),
+          or(isNull(discounts.usageLimit), lt(discounts.timesUsed, discounts.usageLimit)),
+          or(ne(discounts.minRequirementType, 'min_subtotal'), lte(discounts.minSubtotalMinor, subtotalMinor))
+        )
+      )
+      .returning();
+
+    if (!redeemed) {
+      // Re-run the read-only checks purely to give the shopper the specific reason.
+      await this.validateDiscount(code, subtotalMinor, storeId);
+      throw new ConflictException(`Promo code "${code}" is no longer available.`);
+    }
+
+    return { code: redeemed.code, ...this.computeAmount(redeemed, subtotalMinor) };
+  }
+
+  private computeAmount(discount: DiscountRow, subtotalMinor: number) {
+    if (discount.discountType === 'percentage') {
+      return { discountAmountMinor: Math.round((subtotalMinor * discount.value) / 100), freeShipping: false };
+    }
+    if (discount.discountType === 'fixed_amount') {
+      return { discountAmountMinor: Math.min(discount.value, subtotalMinor), freeShipping: false };
+    }
+    return { discountAmountMinor: 0, freeShipping: discount.discountType === 'free_shipping' };
   }
 }

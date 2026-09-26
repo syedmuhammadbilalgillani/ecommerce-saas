@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE } from '../db/db.module';
 import { resolveTenantId } from '../db/store-context';
@@ -91,6 +91,9 @@ export class CartService {
       where: and(eq(cartItems.cartId, activeCart.id), eq(cartItems.variantId, variantId)),
     });
 
+    // Early, friendly check; checkout re-verifies under a row lock, which is the real guarantee.
+    this.assertInStock(variant.stock, (existingItem?.quantity ?? 0) + quantity);
+
     if (existingItem) {
       await this.db
         .update(cartItems)
@@ -113,6 +116,11 @@ export class CartService {
       return this.removeItem(cartId, itemId, storeId);
     }
     await this.requireCart(cartId, storeId);
+    const line = await this.db.query.cartItems.findFirst({
+      where: and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)),
+      with: { variant: true },
+    });
+    if (line) this.assertInStock(line.variant.stock, quantity);
 
     await this.db
       .update(cartItems)
@@ -129,6 +137,15 @@ export class CartService {
       .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
 
     return this.requireCart(cartId, storeId);
+  }
+
+  private assertInStock(available: number, wanted: number) {
+    if (available <= 0) {
+      throw new ConflictException('This item is sold out');
+    }
+    if (wanted > available) {
+      throw new ConflictException(`Only ${available} left in stock`);
+    }
   }
 
   private async requireCart(cartId: string, storeId: string): Promise<FormattedCart> {

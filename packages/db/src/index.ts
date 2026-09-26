@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex, check, jsonb } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -25,6 +25,8 @@ export const stores = pgTable('stores', {
   defaultLocale: text('default_locale').default('en').notNull(),
   supportedLocales: text('supported_locales').array().default(['en']).notNull(),
   timezone: text('timezone').default('Asia/Karachi').notNull(),
+  // Next per-store order number; incremented atomically inside the checkout transaction.
+  nextOrderNumber: integer('next_order_number').default(1001).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -134,6 +136,7 @@ export const productVariants = pgTable(
   (table) => [
     index('idx_variants_product').on(table.productId),
     index('idx_variants_tenant').on(table.tenantId),
+    check('chk_variants_stock_nonnegative', sql`${table.stock} >= 0`),
   ]
 );
 
@@ -212,6 +215,7 @@ export const orders = pgTable(
   },
   (table) => [
     index('idx_orders_store').on(table.storeId),
+    uniqueIndex('uq_orders_store_number').on(table.storeId, table.orderNumber),
     index('idx_orders_tenant').on(table.tenantId),
     index('idx_orders_phone').on(table.customerPhone),
     index('idx_orders_created').on(table.createdAt),
