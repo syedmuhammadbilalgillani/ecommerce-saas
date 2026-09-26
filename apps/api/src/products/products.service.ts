@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
 import { resolveTenantId } from '../db/store-context';
 import {
@@ -9,8 +9,11 @@ import {
   collectionProducts,
   eq,
   and,
+  ne,
+  gte,
   desc,
   inArray,
+  sql,
 } from '@repo/db';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -160,6 +163,115 @@ export class ProductsService {
       where: eq(products.id, prodId),
       with: { variants: true, category: true },
     });
+  }
+
+  /** Edits product details. Publishing/unpublishing is how products are retired (orders keep their snapshots). */
+  async updateMerchantProduct(storeId: string, productId: string, payload: any) {
+    const product = await this.requireStoreProduct(storeId, productId);
+    const patch: Partial<typeof products.$inferInsert> = { updatedAt: new Date() };
+
+    if (payload?.title !== undefined) patch.title = requireText(payload.title, 'title');
+    if (payload?.slug !== undefined) {
+      const slug = requireSlug(payload.slug);
+      if (slug !== product.slug) {
+        const taken = await this.db.query.products.findFirst({
+          where: and(eq(products.storeId, storeId), eq(products.slug, slug), ne(products.id, productId)),
+          columns: { id: true },
+        });
+        if (taken) throw new ConflictException(`A product with slug '${slug}' already exists in this store`);
+      }
+      patch.slug = slug;
+    }
+    if (payload?.description !== undefined) patch.description = String(payload.description ?? '');
+    if (payload?.productType !== undefined) patch.productType = payload.productType ? String(payload.productType) : null;
+    if (payload?.vendor !== undefined) patch.vendor = payload.vendor ? String(payload.vendor) : null;
+    if (payload?.categoryId !== undefined) patch.categoryId = payload.categoryId || null;
+    if (payload?.tags !== undefined) {
+      if (!Array.isArray(payload.tags)) throw new BadRequestException('tags must be a list');
+      patch.tags = payload.tags.map((t: unknown) => String(t).trim()).filter(Boolean);
+    }
+    if (payload?.isPublished !== undefined) {
+      if (typeof payload.isPublished !== 'boolean') throw new BadRequestException('isPublished must be true or false');
+      patch.isPublished = payload.isPublished;
+    }
+
+    await this.db.update(products).set(patch).where(eq(products.id, productId));
+    return this.getMerchantProduct(storeId, productId);
+  }
+
+  /** Edits a variant's title, SKU and prices. Stock is changed only via adjustVariantStock. */
+  async updateMerchantVariant(storeId: string, productId: string, variantId: string, payload: any) {
+    await this.requireStoreProduct(storeId, productId);
+    const patch: Partial<typeof productVariants.$inferInsert> = { updatedAt: new Date() };
+
+    if (payload?.title !== undefined) patch.title = requireText(payload.title, 'title');
+    if (payload?.sku !== undefined) patch.sku = requireText(payload.sku, 'sku');
+    if (payload?.priceMinor !== undefined) patch.priceMinor = requireNonNegativeInt(payload.priceMinor, 'priceMinor');
+    if (payload?.compareAtPriceMinor !== undefined) {
+      patch.compareAtPriceMinor =
+        payload.compareAtPriceMinor === null ? null : requireNonNegativeInt(payload.compareAtPriceMinor, 'compareAtPriceMinor');
+    }
+
+    const updated = await this.db
+      .update(productVariants)
+      .set(patch)
+      .where(and(eq(productVariants.id, variantId), eq(productVariants.productId, productId)))
+      .returning({ id: productVariants.id });
+    if (updated.length === 0) throw new NotFoundException('Variant not found');
+
+    return this.getMerchantProduct(storeId, productId);
+  }
+
+  /**
+   * Adds or removes stock by a delta (e.g. +20 received, -2 damaged) in one atomic UPDATE.
+   * A delta, not "set to N", so a sale happening at the same moment is never overwritten.
+   */
+  async adjustVariantStock(storeId: string, productId: string, variantId: string, rawDelta: unknown) {
+    await this.requireStoreProduct(storeId, productId);
+    if (typeof rawDelta !== 'number' || !Number.isInteger(rawDelta) || rawDelta === 0 || Math.abs(rawDelta) > 100000) {
+      throw new BadRequestException('delta must be a non-zero whole number (e.g. 10 or -3)');
+    }
+
+    const updated = await this.db
+      .update(productVariants)
+      .set({ stock: sql`${productVariants.stock} + ${rawDelta}`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(productVariants.id, variantId),
+          eq(productVariants.productId, productId),
+          gte(sql`${productVariants.stock} + ${rawDelta}`, 0)
+        )
+      )
+      .returning({ id: productVariants.id });
+
+    if (updated.length === 0) {
+      const variant = await this.db.query.productVariants.findFirst({
+        where: and(eq(productVariants.id, variantId), eq(productVariants.productId, productId)),
+        columns: { stock: true },
+      });
+      if (!variant) throw new NotFoundException('Variant not found');
+      throw new ConflictException(`Cannot remove ${-rawDelta}: only ${variant.stock} in stock`);
+    }
+
+    return this.getMerchantProduct(storeId, productId);
+  }
+
+  private async getMerchantProduct(storeId: string, productId: string) {
+    const product = await this.db.query.products.findFirst({
+      where: and(eq(products.id, productId), eq(products.storeId, storeId)),
+      with: { variants: true, category: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    return product;
+  }
+
+  private async requireStoreProduct(storeId: string, productId: string) {
+    const product = await this.db.query.products.findFirst({
+      where: and(eq(products.id, productId), eq(products.storeId, storeId)),
+      columns: { id: true, slug: true },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    return product;
   }
 
   // ----------------------------------------------------

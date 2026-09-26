@@ -171,6 +171,19 @@ export class DiscountsService {
     return created[0];
   }
 
+  async setActive(storeId: string, discountId: string, isActive: unknown) {
+    if (typeof isActive !== 'boolean') {
+      throw new BadRequestException('isActive must be true or false');
+    }
+    const [updated] = await this.db
+      .update(discounts)
+      .set({ isActive, updatedAt: new Date() })
+      .where(and(eq(discounts.id, discountId), eq(discounts.storeId, storeId)))
+      .returning();
+    if (!updated) throw new NotFoundException('Discount not found');
+    return updated;
+  }
+
   /**
    * Checkout-time redemption. Checks every rule AND increments times_used in one UPDATE,
    * so concurrent checkouts can never push a code past its usage limit.

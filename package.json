@@ -19,7 +19,8 @@
     "db:test": "pnpm --filter @repo/db test",
     "db:setup": "pnpm --filter @repo/db setup-db",
     "db:reset": "pnpm --filter @repo/db reset",
-    "db:create-user": "pnpm --filter @repo/db create-user"
+    "db:create-user": "pnpm --filter @repo/db create-user",
+    "db:reset-password": "pnpm --filter @repo/db reset-password"
   },
   "devDependencies": {
     "prettier": "3.9.6",

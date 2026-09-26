@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { PlatformGuard } from '../auth/guards';
 import { PlatformService } from './platform.service';
 
@@ -41,5 +41,17 @@ export class PlatformController {
       success: true,
       data,
     };
+  }
+
+  @Get('tenants/:id/users')
+  async listTenantUsers(@Param('id') id: string) {
+    return { success: true, data: await this.platformService.listTenantUsers(id) };
+  }
+
+  @Post('users/:id/password')
+  @HttpCode(HttpStatus.OK)
+  async resetMerchantPassword(@Param('id') id: string, @Body() body: { newPassword: string }) {
+    await this.platformService.resetMerchantPassword(id, body?.newPassword);
+    return { success: true };
   }
 }

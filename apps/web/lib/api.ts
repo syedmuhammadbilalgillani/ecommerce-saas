@@ -103,3 +103,17 @@ export async function getStorefrontCollection(slug: string): Promise<StorefrontC
     next: { revalidate: 60, tags: [`collection:${slug}`] },
   });
 }
+
+export interface StoreInfo {
+  id: string;
+  name: string;
+  currency: string;
+  /** E.164, e.g. +923001234567; null when the merchant hasn't set one. */
+  whatsappPhone: string | null;
+}
+
+export async function getStoreInfo(): Promise<StoreInfo> {
+  return fetchData<StoreInfo>('/v1/storefront/store', {
+    next: { revalidate: 60, tags: ['store'] },
+  });
+}

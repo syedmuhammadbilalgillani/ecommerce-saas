@@ -313,6 +313,7 @@ async function initDatabase() {
 
     // Per-store order numbering (replaces the API's in-memory counter, which reset on restart).
     await sql`ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "next_order_number" integer DEFAULT 1001 NOT NULL;`;
+    await sql`ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "whatsapp_phone" text;`;
     // Start each store after its highest existing "PF-<n>" number so nothing is reused.
     await sql`
       UPDATE "stores" s SET "next_order_number" = m.next

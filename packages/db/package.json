@@ -18,7 +18,8 @@
     "test": "tsx src/test-db.ts",
     "setup-db": "tsx src/init-db.ts",
     "reset": "tsx src/reset.ts",
-    "create-user": "tsx src/create-user.ts"
+    "create-user": "tsx src/create-user.ts",
+    "reset-password": "tsx src/reset-password.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

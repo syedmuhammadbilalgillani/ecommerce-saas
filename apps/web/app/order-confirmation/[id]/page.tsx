@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { API_URL, formatPrice, storefrontHeaders } from '../../../lib/api';
+import { API_URL, formatPrice, getStoreInfo, storefrontHeaders } from '../../../lib/api';
 import { WhatsAppConfirmButton } from './WhatsAppConfirmButton';
 
 interface OrderConfirmationProps {
@@ -27,7 +27,9 @@ async function getOrder(id: string, token: string | undefined) {
 export default async function OrderConfirmationPage({ params, searchParams }: OrderConfirmationProps) {
   const { id } = await params;
   const { token } = await searchParams;
-  const order = await getOrder(id, token);
+  const [order, store] = await Promise.all([getOrder(id, token), getStoreInfo().catch(() => null)]);
+  // wa.me wants digits only (country code included, no '+').
+  const storeWhatsApp = store?.whatsappPhone?.replace(/\D/g, '') || null;
 
   if (!order) {
     return (
@@ -101,8 +103,9 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
       </div>
 
       {/* WhatsApp COD Verification Flow */}
-      {order.paymentMethod === 'cod' && (
+      {order.paymentMethod === 'cod' && storeWhatsApp && (
         <WhatsAppConfirmButton
+          storePhone={storeWhatsApp}
           orderId={order.id}
           accessToken={token!}
           orderNumber={order.orderNumber}

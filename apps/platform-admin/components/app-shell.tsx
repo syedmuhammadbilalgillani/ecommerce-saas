@@ -72,6 +72,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </svg>
               <span>Tenants & Stores</span>
             </Link>
+            <Link
+              href="/account"
+              className="flex items-center gap-2.5 px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/70 rounded-md transition-colors"
+            >
+              <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <span>Account</span>
+            </Link>
           </nav>
 
           <nav className="space-y-0.5">

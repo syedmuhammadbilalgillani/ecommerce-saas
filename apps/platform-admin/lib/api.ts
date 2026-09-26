@@ -116,3 +116,31 @@ export async function setTenantStatus(id: string, status: 'active' | 'suspended'
     body: JSON.stringify({ status }),
   });
 }
+
+export interface TenantUser {
+  id: string;
+  email: string;
+  name: string | null;
+  role: string;
+  status: string;
+  createdAt: string;
+}
+
+export async function getTenantUsers(tenantId: string): Promise<TenantUser[]> {
+  return request<TenantUser[]>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/users`);
+}
+
+/** Sets a new password for a merchant user and signs them out everywhere. */
+export async function resetMerchantPassword(userId: string, newPassword: string): Promise<void> {
+  await request(`/v1/platform/users/${encodeURIComponent(userId)}/password`, {
+    method: 'POST',
+    body: JSON.stringify({ newPassword }),
+  });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request('/v1/auth/platform/password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}

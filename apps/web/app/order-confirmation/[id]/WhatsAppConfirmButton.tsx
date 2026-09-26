@@ -10,7 +10,8 @@ interface WhatsAppConfirmButtonProps {
   totalFormatted: string;
   customerName: string;
   shippingCity: string;
-  storePhone?: string;
+  /** Store's WhatsApp number, digits only with country code (e.g. 923001234567). */
+  storePhone: string;
   initialVerified?: boolean;
 }
 
@@ -21,7 +22,7 @@ export function WhatsAppConfirmButton({
   totalFormatted,
   customerName,
   shippingCity,
-  storePhone = '923001234567',
+  storePhone,
   initialVerified = false,
 }: WhatsAppConfirmButtonProps) {
   const [verified, setVerified] = useState(initialVerified);

@@ -1,15 +1,28 @@
 import type { Metadata } from 'next';
+import { getStoreInfo, type StoreInfo } from '../lib/api';
 import './globals.css';
 import { CartProvider } from '../lib/cart-context';
 import { HeaderNav } from '../components/header-nav';
 import { CartDrawer } from '../components/cart-drawer';
 
-export const metadata: Metadata = {
-  title: 'NextCommerce | Sub-Second Headless Storefront',
-  description: 'Ultra-fast multi-tenant commerce storefront powered by Next.js 15 & Fastify.',
-};
+async function loadStore(): Promise<StoreInfo | null> {
+  // The header must still render if the store call fails; pages surface their own errors.
+  try {
+    return await getStoreInfo();
+  } catch {
+    return null;
+  }
+}
 
-export default function RootLayout({
+export async function generateMetadata(): Promise<Metadata> {
+  const store = await loadStore();
+  return {
+    title: store?.name ?? 'Online Store',
+    description: store ? `Shop ${store.name} online — Cash on Delivery across Pakistan.` : undefined,
+  };
+}
+
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -34,7 +47,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <CartProvider>
-          <HeaderNav />
+          <HeaderNav storeName={(await loadStore())?.name ?? null} />
           <main>{children}</main>
           <CartDrawer />
         </CartProvider>

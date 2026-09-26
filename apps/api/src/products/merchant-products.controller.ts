@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CurrentMerchant, MerchantGuard, type MerchantContext } from '../auth/guards';
 
@@ -23,5 +23,33 @@ export class MerchantProductsController {
       success: true,
       data: created,
     };
+  }
+
+  @Patch(':productId')
+  async update(@CurrentMerchant() merchant: MerchantContext, @Param('productId') productId: string, @Body() body: any) {
+    const updated = await this.productsService.updateMerchantProduct(merchant.storeId, productId, body);
+    return { success: true, data: updated };
+  }
+
+  @Patch(':productId/variants/:variantId')
+  async updateVariant(
+    @CurrentMerchant() merchant: MerchantContext,
+    @Param('productId') productId: string,
+    @Param('variantId') variantId: string,
+    @Body() body: any
+  ) {
+    const updated = await this.productsService.updateMerchantVariant(merchant.storeId, productId, variantId, body);
+    return { success: true, data: updated };
+  }
+
+  @Post(':productId/variants/:variantId/stock-adjustments')
+  async adjustStock(
+    @CurrentMerchant() merchant: MerchantContext,
+    @Param('productId') productId: string,
+    @Param('variantId') variantId: string,
+    @Body() body: { delta: number }
+  ) {
+    const updated = await this.productsService.adjustVariantStock(merchant.storeId, productId, variantId, body?.delta);
+    return { success: true, data: updated };
   }
 }

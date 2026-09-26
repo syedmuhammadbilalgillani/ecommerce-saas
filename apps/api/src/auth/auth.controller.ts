@@ -9,6 +9,11 @@ interface LoginBody {
   password: string;
 }
 
+interface ChangePasswordBody {
+  currentPassword: string;
+  newPassword: string;
+}
+
 @Controller('v1/auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -35,6 +40,18 @@ export class AuthController {
     return { success: true, data: { ...merchant.user, storeId: merchant.storeId, storeName: merchant.storeName } };
   }
 
+  @Post('merchant/password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(MerchantGuard)
+  async merchantChangePassword(
+    @CurrentMerchant() merchant: MerchantContext,
+    @Req() req: FastifyRequest,
+    @Body() body: ChangePasswordBody
+  ) {
+    await this.auth.changePassword(merchant.user.id, readSessionToken(req, 'merchant')!, body?.currentPassword, body?.newPassword);
+    return { success: true };
+  }
+
   @Post('platform/login')
   @HttpCode(HttpStatus.OK)
   async platformLogin(@Body() body: LoginBody, @Res({ passthrough: true }) reply: FastifyReply) {
@@ -55,5 +72,17 @@ export class AuthController {
   @UseGuards(PlatformGuard)
   platformMe(@CurrentPlatformUser() user: SessionUser) {
     return { success: true, data: user };
+  }
+
+  @Post('platform/password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(PlatformGuard)
+  async platformChangePassword(
+    @CurrentPlatformUser() user: SessionUser,
+    @Req() req: FastifyRequest,
+    @Body() body: ChangePasswordBody
+  ) {
+    await this.auth.changePassword(user.id, readSessionToken(req, 'platform_admin')!, body?.currentPassword, body?.newPassword);
+    return { success: true };
   }
 }

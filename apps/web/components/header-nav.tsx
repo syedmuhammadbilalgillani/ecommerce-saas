@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCart } from '../lib/cart-context';
 import { ThemeToggle } from './theme-toggle';
 
-export function HeaderNav() {
+export function HeaderNav({ storeName }: { storeName: string | null }) {
   const { cart, openCart } = useCart();
   const itemCount = cart?.itemCount || 0;
 
@@ -12,12 +12,10 @@ export function HeaderNav() {
     <header className="header">
       <div className="container nav">
         <Link href="/" className="brand">
-          ⚡ POSflow <span>Commerce</span>
-          <span className="speed-badge">&lt; 50ms Edge</span>
+          {storeName ?? 'Store'}
         </Link>
         <div className="nav-links">
           <span>🇵🇰 PKR</span>
-          <span>English / اردو</span>
           <span style={{ color: 'var(--accent)', fontWeight: 500 }}>● COD Available</span>
 
           {/* Theme Toggle Button */}

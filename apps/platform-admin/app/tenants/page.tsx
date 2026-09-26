@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ResetPasswordDialog } from '@/components/reset-password-dialog';
 
 const MERCHANT_ADMIN_URL = process.env.NEXT_PUBLIC_MERCHANT_ADMIN_URL || 'http://localhost:3001';
 
@@ -29,6 +30,7 @@ export default function TenantsManagementPage() {
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resettingFor, setResettingFor] = useState<PlatformTenant | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -261,6 +263,14 @@ export default function TenantsManagementPage() {
                       >
                         {t.status === 'active' ? 'Suspend' : 'Activate'}
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setResettingFor(t)}
+                        className="h-7 text-[11px] px-2 text-zinc-400 border-zinc-700"
+                      >
+                        Reset password
+                      </Button>
                       <a
                         href={MERCHANT_ADMIN_URL}
                         target="_blank"
@@ -277,6 +287,7 @@ export default function TenantsManagementPage() {
           </TableBody>
         </Table>
       </div>
+      {resettingFor && <ResetPasswordDialog tenant={resettingFor} onClose={() => setResettingFor(null)} />}
     </div>
   );
 }

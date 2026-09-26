@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { getDiscounts, createDiscount, formatPrice, errorMessage, type MerchantDiscount } from '@/lib/api';
+import { getDiscounts, createDiscount, setDiscountActive, formatPrice, errorMessage, type MerchantDiscount } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,20 @@ export default function MerchantDiscountsPage() {
   const [usageLimit, setUsageLimit] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const handleToggle = async (discount: MerchantDiscount) => {
+    setTogglingId(discount.id);
+    setError(null);
+    try {
+      const updated = await setDiscountActive(discount.id, !discount.isActive);
+      setDiscounts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    } catch (err) {
+      setError(`Could not update ${discount.code}: ${errorMessage(err)}`);
+    } finally {
+      setTogglingId(null);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -340,9 +354,20 @@ export default function MerchantDiscountsPage() {
                     {disc.timesUsed} {disc.usageLimit ? `/ ${disc.usageLimit}` : 'uses'}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={disc.isActive ? 'success' : 'default'} className="text-[10px]">
-                      {disc.isActive ? 'Active' : 'Disabled'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={disc.isActive ? 'success' : 'default'} className="text-[10px]">
+                        {disc.isActive ? 'Active' : 'Disabled'}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={togglingId === disc.id}
+                        onClick={() => handleToggle(disc)}
+                        className="h-6 text-[10px] px-2 font-normal"
+                      >
+                        {disc.isActive ? 'Turn off' : 'Turn on'}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

@@ -1,6 +1,6 @@
-import { HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, users, sessions, eq, and, gt, lt, verifyPassword } from '@repo/db';
+import { type Database, users, sessions, eq, and, ne, gt, lt, verifyPassword, hashPassword, MIN_PASSWORD_LENGTH } from '@repo/db';
 import { hashSecret, newSecret, SESSION_TTL_MS, type Role } from './session-token';
 
 export interface SessionUser {
@@ -64,6 +64,31 @@ export class AuthService {
   async logout(token: string | null) {
     if (!token) return;
     await this.db.delete(sessions).where(eq(sessions.id, hashSecret(token)));
+  }
+
+  /**
+   * Changes the signed-in user's password and signs out every other session of that user
+   * (the current one stays signed in).
+   */
+  async changePassword(userId: string, currentToken: string, currentPassword: string, newPassword: string) {
+    if (typeof newPassword !== 'string' || newPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new BadRequestException(`New password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    }
+    const user = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
+    if (!user || !(await verifyPassword(currentPassword || '', user.passwordHash))) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+    if (currentPassword === newPassword) {
+      throw new BadRequestException('New password must be different from the current one');
+    }
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ passwordHash: await hashPassword(newPassword), updatedAt: new Date() })
+        .where(eq(users.id, userId));
+      await tx.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.id, hashSecret(currentToken))));
+    });
   }
 
   /** Resolves a session token to an active user of the given role, or throws 401. */

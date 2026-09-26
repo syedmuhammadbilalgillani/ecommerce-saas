@@ -25,6 +25,8 @@ export const stores = pgTable('stores', {
   defaultLocale: text('default_locale').default('en').notNull(),
   supportedLocales: text('supported_locales').array().default(['en']).notNull(),
   timezone: text('timezone').default('Asia/Karachi').notNull(),
+  // Customer-facing WhatsApp number in E.164 form (e.g. +923001234567); shown on the storefront.
+  whatsappPhone: text('whatsapp_phone'),
   // Next per-store order number; incremented atomically inside the checkout transaction.
   nextOrderNumber: integer('next_order_number').default(1001).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

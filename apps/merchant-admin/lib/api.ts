@@ -395,3 +395,65 @@ export interface MerchantAnalytics {
 export async function getAnalytics(init?: RequestInit): Promise<MerchantAnalytics> {
   return request<MerchantAnalytics>('/v1/merchant/analytics', init);
 }
+
+// ----------------------------------------------------
+// Store settings & account
+// ----------------------------------------------------
+export interface StoreSettings {
+  id: string;
+  name: string;
+  slug: string;
+  currency: string;
+  whatsappPhone: string | null;
+}
+
+export async function getStoreSettings(): Promise<StoreSettings> {
+  return request<StoreSettings>('/v1/merchant/store');
+}
+
+export async function updateStoreSettings(data: { name?: string; whatsappPhone?: string | null }): Promise<StoreSettings> {
+  return request<StoreSettings>('/v1/merchant/store', { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request('/v1/auth/merchant/password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+// ----------------------------------------------------
+// Product editing & inventory
+// ----------------------------------------------------
+export async function updateProduct(productId: string, data: Record<string, unknown>): Promise<MerchantProduct> {
+  return request<MerchantProduct>(`/v1/merchant/products/${encodeURIComponent(productId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateVariant(
+  productId: string,
+  variantId: string,
+  data: { title?: string; sku?: string; priceMinor?: number; compareAtPriceMinor?: number | null }
+): Promise<MerchantProduct> {
+  return request<MerchantProduct>(
+    `/v1/merchant/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`,
+    { method: 'PATCH', body: JSON.stringify(data) }
+  );
+}
+
+/** Adds (positive) or removes (negative) stock. */
+export async function adjustStock(productId: string, variantId: string, delta: number): Promise<MerchantProduct> {
+  return request<MerchantProduct>(
+    `/v1/merchant/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}/stock-adjustments`,
+    { method: 'POST', body: JSON.stringify({ delta }) }
+  );
+}
+
+export async function setDiscountActive(discountId: string, isActive: boolean): Promise<MerchantDiscount> {
+  return request<MerchantDiscount>(`/v1/merchant/discounts/${encodeURIComponent(discountId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isActive }),
+  });
+}

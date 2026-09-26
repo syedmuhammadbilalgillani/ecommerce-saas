@@ -14,6 +14,7 @@ import {
 } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { ErrorBanner } from '@/components/error-banner';
+import { ProductEditor } from '@/components/product-editor';
 import { slugify } from '@/lib/slug';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +50,7 @@ export default function MerchantProductsPage() {
   const [slugEdited, setSlugEdited] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<MerchantProduct | null>(null);
   const [description, setDescription] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [productType, setProductType] = useState('');
@@ -560,14 +562,28 @@ export default function MerchantProductsPage() {
                         {priceStr}
                       </TableCell>
                       <TableCell className="text-right">
-                        <a
-                          href={`${STOREFRONT_URL}/products/${p.slug}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
-                        >
-                          Live ↗
-                        </a>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditing(p)}
+                            className="h-7 text-[11px] px-2 font-normal"
+                          >
+                            Edit
+                          </Button>
+                          {p.isPublished ? (
+                            <a
+                              href={`${STOREFRONT_URL}/products/${p.slug}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
+                            >
+                              Live ↗
+                            </a>
+                          ) : (
+                            <Badge variant="secondary" className="text-[10px]">Hidden</Badge>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -577,6 +593,13 @@ export default function MerchantProductsPage() {
           </Table>
         </div>
       </div>
+      {editing && (
+        <ProductEditor
+          product={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(updated) => setProducts(prev => prev.map(x => (x.id === updated.id ? updated : x)))}
+        />
+      )}
     </div>
   );
 }

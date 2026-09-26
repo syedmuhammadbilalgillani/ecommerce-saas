@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { DiscountsService, CreateDiscountDto } from './discounts.service';
 import {
   CurrentMerchant,
@@ -53,5 +53,19 @@ export class DiscountsController {
       success: true,
       data: created,
     };
+  }
+
+  /**
+   * Merchant: Turn a discount on or off
+   */
+  @Patch('merchant/discounts/:id')
+  @UseGuards(MerchantGuard)
+  async setActive(
+    @CurrentMerchant() merchant: MerchantContext,
+    @Param('id') id: string,
+    @Body() body: { isActive: boolean }
+  ) {
+    const updated = await this.discountsService.setActive(merchant.storeId, id, body?.isActive);
+    return { success: true, data: updated };
   }
 }
