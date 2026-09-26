@@ -146,6 +146,11 @@ export default function MerchantAnalyticsPage() {
     );
   }
 
+  const itemsPerOrder =
+    analytics.totalOrders > 0 ? (analytics.totalUnits / analytics.totalOrders).toFixed(1) : '0';
+  const fulfillmentRate =
+    analytics.totalOrders > 0 ? Math.round((analytics.deliveredOrders / analytics.totalOrders) * 100) : 0;
+
   // Format Recharts Telemetry Data
   const chartData = analytics.salesOverTime.map((d) => {
     const sales = Math.round(d.salesMinor / 100);
@@ -166,7 +171,7 @@ export default function MerchantAnalyticsPage() {
       color: 'hsl(var(--chart-1))',
     },
     orders: {
-      label: 'Completed Orders',
+      label: 'Orders',
       color: 'hsl(var(--chart-2))',
     },
     aov: {
@@ -196,9 +201,6 @@ export default function MerchantAnalyticsPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-normal tracking-tight text-foreground">Analytics & Reports</h1>
-            <Badge variant="outline" className="text-[11px] font-normal text-muted-foreground">
-              Shopify Telemetry v2
-            </Badge>
           </div>
           <p className="text-xs text-muted-foreground font-normal mt-0.5">
             Real-time financial telemetry, product velocity, courier COD transit, and customer retention.
@@ -263,10 +265,10 @@ export default function MerchantAnalyticsPage() {
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-mono">
                 {analytics.totalOrders} Total Orders
               </Badge>
-              <span className="text-[11px] text-muted-foreground font-normal">100% completed</span>
+              <span className="text-[11px] text-muted-foreground font-normal">excluding cancelled</span>
             </div>
             <p className="text-[11px] text-muted-foreground font-normal mt-2 border-t border-border/50 pt-1.5">
-              Items per order: <span className="text-foreground">2.4 units avg</span>
+              Items per order: <span className="text-foreground">{itemsPerOrder} units avg</span>
             </p>
           </CardContent>
         </Card>
@@ -304,7 +306,7 @@ export default function MerchantAnalyticsPage() {
               </Badge>
             </div>
             <p className="text-[11px] text-muted-foreground font-normal mt-2 border-t border-border/50 pt-1.5">
-              Integrated Couriers: <span className="text-foreground">Trax & Leopards</span>
+              RTO = returned orders ÷ all non-cancelled orders
             </p>
           </CardContent>
         </Card>
@@ -341,12 +343,12 @@ export default function MerchantAnalyticsPage() {
                   : 'hover:bg-muted/20'
               }`}
             >
-              <div className="text-xs text-muted-foreground font-normal">Completed Orders</div>
+              <div className="text-xs text-muted-foreground font-normal">Orders</div>
               <div className="text-lg font-medium text-foreground tracking-tight mt-1">
                 {analytics.totalOrders} Orders
               </div>
               <div className="flex items-center gap-1 mt-1 text-[11px] text-muted-foreground">
-                <span>100% fulfillment rate</span>
+                <span>{fulfillmentRate}% delivered</span>
               </div>
             </button>
 
@@ -365,7 +367,7 @@ export default function MerchantAnalyticsPage() {
                 {formatPrice(analytics.averageOrderValueMinor)}
               </div>
               <div className="flex items-center gap-1 mt-1 text-[11px] text-muted-foreground">
-                <span>Cart size: 2.4 items</span>
+                <span>Cart size: {itemsPerOrder} items</span>
               </div>
             </button>
           </div>

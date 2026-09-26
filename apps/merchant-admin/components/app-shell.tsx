@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-medium tracking-tight text-foreground truncate">Merchant Portal</div>
-                <div className="text-[10px] text-muted-foreground font-normal truncate">{me?.storeId ?? '…'}</div>
+                <div className="text-[10px] text-muted-foreground font-normal truncate">{me?.storeName ?? '…'}</div>
               </div>
             </div>
             <ThemeToggle />

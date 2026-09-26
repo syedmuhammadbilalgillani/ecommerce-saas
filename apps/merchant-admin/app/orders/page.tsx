@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getOrders, bookCourier, updateOrderStatus, formatPrice, verifyWhatsAppOrder, formatWhatsAppUrl, errorMessage, type MerchantOrder } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
+import { PackingLabel } from '@/components/packing-label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -296,74 +297,9 @@ export default function MerchantOrdersPage() {
         </Table>
       </div>
 
-      {/* 4x6 Thermal Airway Bill Printable Modal */}
+      {/* 4x6 Packing Label */}
       {selectedOrderForLabel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-white text-zinc-950 rounded-lg max-w-sm w-full p-6 shadow-2xl font-mono text-xs border border-zinc-300">
-            {/* Header */}
-            <div className="border-b-2 border-black pb-3 text-center">
-              <div className="text-base font-bold tracking-tight">TRAX LOGISTICS (COD)</div>
-              <div className="text-[10px] text-zinc-600">DOMESTIC COURIER AIRWAY BILL (4x6)</div>
-              <div className="mt-2 text-lg font-bold tracking-wider bg-zinc-100 py-1 border border-zinc-300 rounded">
-                {selectedOrderForLabel.courierTrackingNumber || 'TRX-DEFAULT'}
-              </div>
-            </div>
-
-            {/* Recipient Details */}
-            <div className="py-3 border-b border-zinc-300 space-y-1">
-              <div className="text-[10px] text-zinc-500 uppercase">Deliver To:</div>
-              <div className="font-bold text-sm">{selectedOrderForLabel.customerName}</div>
-              <div className="text-xs">{selectedOrderForLabel.customerPhone}</div>
-              <div className="text-xs text-zinc-800 mt-1">{selectedOrderForLabel.shippingAddress}</div>
-              <div className="font-bold text-xs uppercase mt-0.5">{selectedOrderForLabel.customerCity}</div>
-            </div>
-
-            {/* COD Collectable Amount */}
-            <div className="py-3 border-b-2 border-black flex justify-between items-center bg-zinc-50 px-2 my-2 rounded">
-              <div>
-                <div className="text-[10px] text-zinc-500 uppercase font-bold">Cash on Delivery</div>
-                <div className="text-[10px] text-zinc-500">Collect from customer</div>
-              </div>
-              <div className="text-base font-bold">
-                {formatPrice(selectedOrderForLabel.totalMinor)}
-              </div>
-            </div>
-
-            {/* Package Contents */}
-            <div className="py-2 text-[10px] text-zinc-600 space-y-1">
-              <div>Order Ref: #{selectedOrderForLabel.orderNumber}</div>
-              <div>Shipper: Outfitters PK (Karachi Fulfillment Hub)</div>
-              <div>Weight: 0.50 KG (Flyer standard)</div>
-            </div>
-
-            {/* Simulated Barcode */}
-            <div className="pt-3 text-center border-t border-zinc-300">
-              <div className="font-mono text-xl tracking-widest select-none">
-                ||| | |||| | ||||| ||| |||| |
-              </div>
-              <div className="text-[9px] text-zinc-500 mt-1">Scan at transit dispatch hub</div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="mt-6 flex justify-end gap-2 border-t border-zinc-200 pt-3 font-sans">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedOrderForLabel(null)}
-                className="h-8 text-xs text-zinc-700 border-zinc-300 hover:bg-zinc-100"
-              >
-                Close
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => window.print()}
-                className="h-8 text-xs bg-zinc-900 text-white hover:bg-zinc-800"
-              >
-                🖨️ Print Label
-              </Button>
-            </div>
-          </div>
-        </div>
+        <PackingLabel order={selectedOrderForLabel} onClose={() => setSelectedOrderForLabel(null)} />
       )}
     </div>
   );

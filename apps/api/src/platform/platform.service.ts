@@ -16,7 +16,7 @@ export class PlatformService {
 
   async getPlatformAnalytics() {
     const [[tenantCount], [storeCount], [gmv]] = await Promise.all([
-      this.db.select({ count: sql<number>`count(*)::int` }).from(tenants),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(tenants).where(eq(tenants.status, 'active')),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(stores)

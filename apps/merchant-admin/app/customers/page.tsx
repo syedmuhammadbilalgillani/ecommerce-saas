@@ -32,17 +32,25 @@ export default function MerchantCustomersPage() {
     load();
   }, []);
 
+  // Prefill from ?search= (e.g. the "View Profile" link on an order).
+  useEffect(() => {
+    const initial = new URLSearchParams(window.location.search).get('search');
+    if (initial) setSearch(initial);
+  }, []);
+
   useEffect(() => {
     if (!search.trim()) {
       setFiltered(customers);
       return;
     }
     const q = search.toLowerCase();
+    // Phones are stored normalized (+923001234567) but typed/displayed with spaces and dashes.
+    const qDigits = q.replace(/\D/g, '');
     setFiltered(
       customers.filter(
         (c) =>
           `${c.firstName || ''} ${c.lastName || ''}`.toLowerCase().includes(q) ||
-          c.phone.includes(q) ||
+          (qDigits.length > 0 && c.phone.replace(/\D/g, '').includes(qDigits)) ||
           (c.email && c.email.toLowerCase().includes(q))
       )
     );

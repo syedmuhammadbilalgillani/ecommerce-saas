@@ -464,7 +464,7 @@ export default function MerchantProductsPage() {
                     <Input
                       value={vendor}
                       onChange={(e) => setVendor(e.target.value)}
-                      placeholder="Outfitters PK"
+                      placeholder="e.g. Your brand name"
                       className="h-7 text-xs bg-card"
                     />
                   </div>
@@ -533,7 +533,7 @@ export default function MerchantProductsPage() {
                     ? formatPrice(minPrice)
                     : `${formatPrice(minPrice)} - ${formatPrice(maxPrice)}`;
 
-                  const catDisplay = p.category?.name || categories.find(c => c.id === p.categoryId)?.name || 'General Apparel';
+                  const catDisplay = p.category?.name || categories.find(c => c.id === p.categoryId)?.name || 'Uncategorized';
 
                   return (
                     <TableRow key={p.id}>
@@ -547,8 +547,8 @@ export default function MerchantProductsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
-                        <div className="text-foreground">{p.productType || 'Apparel'}</div>
-                        <div className="text-[10px] text-muted-foreground">{p.vendor || 'Outfitters PK'}</div>
+                        <div className="text-foreground">{p.productType || '—'}</div>
+                        <div className="text-[10px] text-muted-foreground">{p.vendor || '—'}</div>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {p.variants.length} variants

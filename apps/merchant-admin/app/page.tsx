@@ -162,7 +162,7 @@ export default async function MerchantDashboardPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <Link
-                        href="/orders"
+                        href={`/orders/${order.id}`}
                         className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
                       >
                         Details

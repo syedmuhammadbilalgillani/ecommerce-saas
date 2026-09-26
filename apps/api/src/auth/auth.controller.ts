@@ -32,7 +32,7 @@ export class AuthController {
   @Get('merchant/me')
   @UseGuards(MerchantGuard)
   merchantMe(@CurrentMerchant() merchant: MerchantContext) {
-    return { success: true, data: { ...merchant.user, storeId: merchant.storeId } };
+    return { success: true, data: { ...merchant.user, storeId: merchant.storeId, storeName: merchant.storeName } };
   }
 
   @Post('platform/login')

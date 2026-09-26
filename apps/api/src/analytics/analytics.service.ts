@@ -7,6 +7,10 @@ export interface AnalyticsSummary {
   netSalesMinor: number;
   discountsMinor: number;
   totalOrders: number;
+  /** Units across all non-cancelled orders (for items-per-order). */
+  totalUnits: number;
+  /** Non-cancelled orders marked delivered/fulfilled (for fulfillment rate). */
+  deliveredOrders: number;
   averageOrderValueMinor: number;
   pendingCodMinor: number;
   rtoRatePercent: number;
@@ -65,6 +69,7 @@ export class AnalyticsService {
     let totalDiscounts = 0;
     let pendingCod = 0;
     let rtoCount = 0;
+    let deliveredOrders = 0;
 
     const salesByDateMap = new Map<string, { sales: number; count: number }>();
     const cityMap = new Map<string, { count: number; revenue: number }>();
@@ -80,6 +85,10 @@ export class AnalyticsService {
 
       if (ord.orderStatus === 'returned' || ord.fulfillmentStatus === 'returned') {
         rtoCount++;
+      }
+
+      if (ord.fulfillmentStatus === 'delivered' || ord.fulfillmentStatus === 'fulfilled') {
+        deliveredOrders++;
       }
 
       // Daily breakdown
@@ -112,7 +121,9 @@ export class AnalyticsService {
 
     // Top Selling Products
     const productMap = new Map<string, { title: string; variantTitle: string; units: number; revenue: number }>();
+    let totalUnits = 0;
     for (const item of itemsList) {
+      totalUnits += item.quantity;
       const key = `${item.title}-${item.variantTitle}`;
       const existingProd = productMap.get(key) || {
         title: item.title,
@@ -170,6 +181,8 @@ export class AnalyticsService {
       netSalesMinor: grossSales - totalDiscounts,
       discountsMinor: totalDiscounts,
       totalOrders: totalOrdersCount,
+      totalUnits,
+      deliveredOrders,
       averageOrderValueMinor: aov,
       pendingCodMinor: pendingCod,
       rtoRatePercent: rtoRate,

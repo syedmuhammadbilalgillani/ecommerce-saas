@@ -18,6 +18,7 @@ export interface MerchantContext {
   tenantId: string;
   /** The store every merchant query must be scoped to — always one owned by `tenantId`. */
   storeId: string;
+  storeName: string;
 }
 
 type AuthedRequest = FastifyRequest & {
@@ -48,30 +49,28 @@ export class MerchantGuard implements CanActivate {
     const tenantId = user.tenantId!;
 
     const requestedStoreId = headerValue(req, 'x-store-id');
-    let storeId: string | undefined;
+    let store: { id: string; tenantId: string; name: string } | undefined;
 
     if (requestedStoreId) {
-      const store = await this.db.query.stores.findFirst({
+      store = await this.db.query.stores.findFirst({
         where: eq(stores.id, requestedStoreId),
-        columns: { id: true, tenantId: true },
+        columns: { id: true, tenantId: true, name: true },
       });
       if (!store || store.tenantId !== tenantId) {
         throw new ForbiddenException('You do not have access to this store');
       }
-      storeId = store.id;
     } else {
-      const store = await this.db.query.stores.findFirst({
+      store = await this.db.query.stores.findFirst({
         where: eq(stores.tenantId, tenantId),
-        columns: { id: true },
+        columns: { id: true, tenantId: true, name: true },
         orderBy: [asc(stores.createdAt)],
       });
       if (!store) {
         throw new ForbiddenException('Your account has no store yet');
       }
-      storeId = store.id;
     }
 
-    req.merchant = { user, tenantId, storeId };
+    req.merchant = { user, tenantId, storeId: store.id, storeName: store.name };
     return true;
   }
 }

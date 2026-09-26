@@ -59,6 +59,7 @@ export interface CurrentMerchant {
   name: string | null;
   tenantId: string;
   storeId: string;
+  storeName: string;
 }
 
 export async function login(email: string, password: string): Promise<void> {
@@ -360,6 +361,8 @@ export interface MerchantAnalytics {
   netSalesMinor: number;
   discountsMinor: number;
   totalOrders: number;
+  totalUnits: number;
+  deliveredOrders: number;
   averageOrderValueMinor: number;
   pendingCodMinor: number;
   rtoRatePercent: number;

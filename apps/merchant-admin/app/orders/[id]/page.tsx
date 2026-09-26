@@ -15,6 +15,8 @@ import {
   type MerchantOrder,
 } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
+import { PackingLabel } from '@/components/packing-label';
+import { FULFILLMENT_LABEL, isMajorMetro, isPakistaniMobile } from '@/lib/order-checks';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -438,7 +440,7 @@ export default function OrderDetailPage() {
               {order.paymentMethod === 'cod' && (
                 <div className="p-3 rounded bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 text-[11px] flex items-center justify-between">
                   <span>Courier Cash to Collect: <strong>{formatPrice(order.totalMinor)}</strong></span>
-                  <span className="font-mono">Pending Dispatch</span>
+                  <span className="font-mono">{FULFILLMENT_LABEL[order.status] ?? order.status}</span>
                 </div>
               )}
             </CardContent>
@@ -470,7 +472,7 @@ export default function OrderDetailPage() {
                   <div>
                     <div className="text-foreground font-medium">Inventory Stock Deducted</div>
                     <div className="text-[11px] text-muted-foreground">
-                      Automated engine deducted quantities for {order.items.length} line items
+                      Stock reduced for {order.items.length} line item{order.items.length === 1 ? '' : 's'} at checkout
                     </div>
                   </div>
                 </div>
@@ -479,10 +481,22 @@ export default function OrderDetailPage() {
                   <div className="flex items-start gap-3">
                     <div className="w-2 h-2 rounded-full bg-emerald-500 mt-1" />
                     <div>
-                      <div className="text-foreground font-medium">WhatsApp COD Verification Logged</div>
+                      <div className="text-foreground font-medium">Marked WhatsApp-verified</div>
                       <div className="text-[11px] text-muted-foreground">
-                        Customer verified delivery address via 1-click WhatsApp message
+                        {order.notes?.includes('Verified: CUSTOMER')
+                          ? 'Customer opened the WhatsApp confirmation from the order page'
+                          : 'Merchant sent the WhatsApp confirmation message'}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {isCancelled && (
+                  <div className="flex items-start gap-3">
+                    <div className="w-2 h-2 rounded-full bg-red-500 mt-1" />
+                    <div>
+                      <div className="text-foreground font-medium">Order Cancelled</div>
+                      <div className="text-[11px] text-muted-foreground">Stock was returned to inventory</div>
                     </div>
                   </div>
                 )}
@@ -495,7 +509,7 @@ export default function OrderDetailPage() {
                         Courier Booked ({order.courierName})
                       </div>
                       <div className="text-[11px] text-muted-foreground font-mono">
-                        Airway Bill Consignment #{order.courierTrackingNumber} generated
+                        Consignment #{order.courierTrackingNumber} (generated in POSflow)
                       </div>
                     </div>
                   </div>
@@ -594,29 +608,35 @@ export default function OrderDetailPage() {
             </CardContent>
           </Card>
 
-          {/* COD Risk & Delivery Assessment Card */}
+          {/* COD Checks (computed from this order's own data) */}
           <Card>
             <CardHeader className="p-5 pb-3 border-b border-border">
               <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
                 <span>🛡️</span>
-                <span>COD Fraud & Risk Assessment</span>
+                <span>COD Checks</span>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-5 space-y-2.5 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Phone Number Format</span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-medium">Valid Pakistani (03xx)</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">City Logistics Tier</span>
-                <span className="font-medium text-foreground">Tier-1 Major Hub</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">WhatsApp Verification</span>
-                {order.whatsappVerified ? (
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">Verified (Low RTO)</span>
+                <span className="text-muted-foreground">Phone number</span>
+                {isPakistaniMobile(order.customerPhone) ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">Pakistani mobile</span>
                 ) : (
-                  <span className="text-amber-600 dark:text-amber-400 font-medium">Pending Confirmation</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Not a Pakistani mobile</span>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Destination</span>
+                <span className="font-medium text-foreground">
+                  {isMajorMetro(order.customerCity) ? 'Major metro' : 'Outside major metros'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">WhatsApp confirmation</span>
+                {order.whatsappVerified ? (
+                  <span className="text-emerald-600 dark:text-emerald-400 font-medium">Done</span>
+                ) : (
+                  <span className="text-amber-600 dark:text-amber-400 font-medium">Not yet</span>
                 )}
               </div>
             </CardContent>
@@ -624,72 +644,8 @@ export default function OrderDetailPage() {
         </div>
       </div>
 
-      {/* 4x6 Thermal Airway Bill Printable Modal */}
-      {showThermalLabel && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="bg-white text-zinc-950 rounded-lg max-w-sm w-full p-6 shadow-2xl font-mono text-xs border border-zinc-300">
-            {/* Header */}
-            <div className="border-b-2 border-black pb-3 text-center">
-              <div className="text-base font-bold tracking-tight">TRAX LOGISTICS (COD)</div>
-              <div className="text-[10px] text-zinc-600">DOMESTIC COURIER AIRWAY BILL (4x6)</div>
-              <div className="mt-2 text-lg font-bold tracking-wider bg-zinc-100 py-1 border border-zinc-300 rounded">
-                {order.courierTrackingNumber || 'TRX-DEFAULT'}
-              </div>
-            </div>
-
-            {/* Recipient Details */}
-            <div className="py-3 border-b border-dashed border-zinc-400 space-y-1">
-              <div className="text-[10px] text-zinc-500 uppercase">Deliver To (Customer):</div>
-              <div className="font-bold text-sm">{order.customerName}</div>
-              <div>{order.shippingAddress}</div>
-              <div className="font-bold">{order.customerCity}, Pakistan</div>
-              <div className="font-bold text-sm mt-1">{order.customerPhone}</div>
-            </div>
-
-            {/* COD Cash Amount */}
-            <div className="py-3 border-b-2 border-black flex justify-between items-center">
-              <div>
-                <div className="text-[10px] text-zinc-500 uppercase">Payment Method:</div>
-                <div className="font-bold text-sm">CASH ON DELIVERY</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[10px] text-zinc-500 uppercase">Collect Amount:</div>
-                <div className="text-base font-bold text-black">{formatPrice(order.totalMinor)}</div>
-              </div>
-            </div>
-
-            {/* Order Ref & Items */}
-            <div className="py-2 text-[10px] text-zinc-600 border-b border-zinc-200">
-              <div>Order Reference: #{order.orderNumber}</div>
-              <div>Pieces: {order.items.length} | Weight: 0.5 KG (Standard Apparel)</div>
-            </div>
-
-            {/* Barcode Mock */}
-            <div className="pt-3 text-center">
-              <div className="h-10 bg-zinc-900 mx-4 flex items-center justify-center text-white text-[10px] tracking-[6px] font-sans">
-                |||| | ||||| || |||||| |
-              </div>
-              <div className="text-[9px] text-zinc-500 mt-1">{order.courierTrackingNumber}</div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="mt-4 pt-3 border-t border-zinc-200 flex justify-between gap-2">
-              <button
-                onClick={() => setShowThermalLabel(false)}
-                className="px-3 py-1.5 bg-zinc-200 hover:bg-zinc-300 text-zinc-800 rounded text-xs cursor-pointer font-sans"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-1.5 bg-black hover:bg-zinc-800 text-white rounded text-xs cursor-pointer font-sans font-medium"
-              >
-                Print Label
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 4x6 Packing Label */}
+      {showThermalLabel && <PackingLabel order={order} onClose={() => setShowThermalLabel(false)} />}
     </div>
   );
 }
