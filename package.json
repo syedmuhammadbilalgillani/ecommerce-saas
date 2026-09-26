@@ -1,0 +1,32 @@
+{
+  "name": "ecommerce-saas",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "dev:storefront": "pnpm --filter web dev",
+    "dev:merchant": "pnpm --filter merchant-admin dev",
+    "dev:platform": "pnpm --filter platform-admin dev",
+    "dev:api": "pnpm --filter api dev",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "check-types": "turbo run check-types",
+    "db:generate": "pnpm --filter @repo/db generate",
+    "db:push": "pnpm --filter @repo/db push",
+    "db:migrate": "pnpm --filter @repo/db migrate",
+    "db:studio": "pnpm --filter @repo/db studio",
+    "db:seed": "pnpm --filter @repo/db seed",
+    "db:test": "pnpm --filter @repo/db test",
+    "db:setup": "pnpm --filter @repo/db setup-db",
+    "db:reset": "pnpm --filter @repo/db reset"
+  },
+  "devDependencies": {
+    "prettier": "3.9.6",
+    "turbo": "^2.11.3",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
