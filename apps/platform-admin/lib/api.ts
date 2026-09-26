@@ -2,12 +2,19 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 export { formatPrice } from './utils';
 
-/** Calls the API and unwraps `data`; throws with the API's own message on failure. */
+/** Thrown when the API says the admin is not signed in (or the session expired). */
+export class AuthError extends Error {}
+
+/**
+ * Calls the API and unwraps `data`; throws with the API's own message on failure.
+ * Server components must forward the incoming cookie header via `init.headers`.
+ */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
       cache: 'no-store',
+      credentials: 'include',
       ...init,
       headers: {
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -19,6 +26,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const json = await res.json().catch(() => null);
+  if (res.status === 401) {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.assign('/login');
+    }
+    throw new AuthError(json?.message || 'Please sign in');
+  }
   if (!res.ok) {
     const message = Array.isArray(json?.message) ? json.message.join(', ') : json?.message;
     throw new Error(message || `Request failed (${res.status})`);
@@ -53,15 +66,41 @@ export interface PlatformMetrics {
   systemHealth: 'healthy' | 'degraded' | 'incident';
 }
 
-export async function getPlatformMetrics(): Promise<PlatformMetrics> {
-  return request<PlatformMetrics>('/v1/platform/analytics');
+export interface PlatformAdmin {
+  id: string;
+  email: string;
+  name: string | null;
 }
 
-export async function getPlatformTenants(): Promise<PlatformTenant[]> {
-  return request<PlatformTenant[]>('/v1/platform/tenants');
+export async function login(email: string, password: string): Promise<void> {
+  await request('/v1/auth/platform/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
 }
 
-export async function createTenant(input: { name: string; slug: string }): Promise<PlatformTenant> {
+export async function logout(): Promise<void> {
+  await request('/v1/auth/platform/logout', { method: 'POST' });
+}
+
+export async function getCurrentAdmin(): Promise<PlatformAdmin> {
+  return request<PlatformAdmin>('/v1/auth/platform/me');
+}
+
+export async function getPlatformMetrics(init?: RequestInit): Promise<PlatformMetrics> {
+  return request<PlatformMetrics>('/v1/platform/analytics', init);
+}
+
+export async function getPlatformTenants(init?: RequestInit): Promise<PlatformTenant[]> {
+  return request<PlatformTenant[]>('/v1/platform/tenants', init);
+}
+
+export async function createTenant(input: {
+  name: string;
+  slug: string;
+  ownerEmail: string;
+  ownerPassword: string;
+}): Promise<PlatformTenant> {
   return request<PlatformTenant>('/v1/platform/tenants', {
     method: 'POST',
     body: JSON.stringify(input),

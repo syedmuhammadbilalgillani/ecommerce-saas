@@ -21,6 +21,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3000';
+
 interface DynamicOption {
   name: string;
   valuesInput: string;
@@ -559,7 +561,7 @@ export default function MerchantProductsPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <a
-                          href={`http://localhost:3000/products/${p.slug}`}
+                          href={`${STOREFRONT_URL}/products/${p.slug}`}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"

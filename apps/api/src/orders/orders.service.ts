@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { DRIZZLE } from '../db/db.module';
+import { hashSecret, newSecret } from '../auth/session-token';
 import { resolveTenantId, type DbExecutor } from '../db/store-context';
-import { type Database, orders, orderItems, cartItems, productVariants, eq, desc, sql } from '@repo/db';
+import { type Database, orders, orderItems, cartItems, productVariants, eq, and, desc, sql } from '@repo/db';
 import { CartService } from '../cart/cart.service';
 import { DiscountsService } from '../discounts/discounts.service';
 import { CustomersService } from '../customers/customers.service';
@@ -90,14 +92,14 @@ export class OrdersService {
   ) {}
 
   private generateId(prefix: string): string {
-    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    return `${prefix}_${randomBytes(12).toString('hex')}`;
   }
 
   async checkout(
     dto: CheckoutDto,
-    headerCartId?: string,
-    storeId: string = 'store_default'
-  ): Promise<FormattedOrder> {
+    headerCartId: string | undefined,
+    storeId: string
+  ): Promise<{ order: FormattedOrder; accessToken: string }> {
     const cartId = dto.cartId || headerCartId;
     if (!cartId) {
       throw new BadRequestException('A valid cartId is required for checkout');
@@ -125,7 +127,7 @@ export class OrdersService {
     let discountCode: string | null = null;
     let discountMinor = 0;
     if (dto.discountCode) {
-      const discResult = await this.discountsService.validateDiscount(dto.discountCode, subtotalMinor, storeId, tenantId);
+      const discResult = await this.discountsService.validateDiscount(dto.discountCode, subtotalMinor, storeId);
       discountCode = discResult.code;
       discountMinor = discResult.discountAmountMinor;
     }
@@ -134,6 +136,7 @@ export class OrdersService {
     const paymentMethod = dto.paymentMethod || 'cod';
     const orderId = this.generateId('ord');
     const orderNumber = `PF-${ORDER_COUNTER++}`;
+    const accessToken = newSecret(24);
 
     // 3. Persist order, snapshots, stock and cart clear atomically.
     await this.db.transaction(async (tx) => {
@@ -161,6 +164,7 @@ export class OrdersService {
         shippingFeeMinor,
         totalMinor,
         notes: dto.notes || null,
+        accessToken: hashSecret(accessToken),
       });
 
       await tx.insert(orderItems).values(
@@ -183,7 +187,7 @@ export class OrdersService {
       await this.adjustStock(tx, cart.items, 'deduct');
 
       if (discountCode) {
-        await this.discountsService.incrementUsage(discountCode, tx);
+        await this.discountsService.incrementUsage(discountCode, storeId, tx);
       }
 
       await tx.delete(cartItems).where(eq(cartItems.cartId, cartId));
@@ -211,12 +215,13 @@ export class OrdersService {
       this.logger.warn(`Customer sync failed for order ${orderNumber}: ${err.message}`);
     }
 
-    return this.getOrderById(orderId);
+    return { order: await this.getStoreOrder(storeId, orderId), accessToken };
   }
 
-  async getOrderById(orderId: string): Promise<FormattedOrder> {
+  /** Merchant-side lookup: the order must belong to the caller's store. */
+  async getStoreOrder(storeId: string, orderId: string): Promise<FormattedOrder> {
     const order = await this.db.query.orders.findFirst({
-      where: eq(orders.id, orderId),
+      where: and(eq(orders.id, orderId), eq(orders.storeId, storeId)),
       with: { items: true },
     });
 
@@ -226,7 +231,25 @@ export class OrdersService {
     return this.formatOrder(order);
   }
 
-  async listAdminOrders(storeId: string = 'store_default'): Promise<FormattedOrder[]> {
+  /** Shopper-side lookup: requires the secret token issued at checkout. */
+  async getStorefrontOrder(storeId: string, orderId: string, token: string | undefined): Promise<FormattedOrder> {
+    const order = await this.db.query.orders.findFirst({
+      where: and(eq(orders.id, orderId), eq(orders.storeId, storeId)),
+      with: { items: true },
+    });
+
+    const expected = order?.accessToken ? Buffer.from(order.accessToken) : null;
+    const actual = token ? Buffer.from(hashSecret(token)) : null;
+    const tokenMatches = !!expected && !!actual && expected.length === actual.length && timingSafeEqual(expected, actual);
+
+    // Same 404 whether the order is missing or the token is wrong, so ids can't be probed.
+    if (!order || !tokenMatches) {
+      throw new NotFoundException('Order not found');
+    }
+    return this.formatOrder(order);
+  }
+
+  async listAdminOrders(storeId: string): Promise<FormattedOrder[]> {
     const records = await this.db.query.orders.findMany({
       where: eq(orders.storeId, storeId),
       with: { items: true },
@@ -235,7 +258,7 @@ export class OrdersService {
     return records.map((order) => this.formatOrder(order));
   }
 
-  async updateOrderStatus(orderId: string, update: OrderStatusUpdate): Promise<FormattedOrder> {
+  async updateOrderStatus(storeId: string, orderId: string, update: OrderStatusUpdate): Promise<FormattedOrder> {
     // Only these three columns may be changed through this endpoint, and only to known values.
     const patch: OrderStatusUpdate = {};
     for (const field of Object.keys(ALLOWED_STATUS_VALUES) as Array<keyof OrderStatusUpdate>) {
@@ -252,7 +275,7 @@ export class OrdersService {
 
     await this.db.transaction(async (tx) => {
       const current = await tx.query.orders.findFirst({
-        where: eq(orders.id, orderId),
+        where: and(eq(orders.id, orderId), eq(orders.storeId, storeId)),
         with: { items: true },
       });
       if (!current) {
@@ -271,11 +294,11 @@ export class OrdersService {
       }
     });
 
-    return this.getOrderById(orderId);
+    return this.getStoreOrder(storeId, orderId);
   }
 
-  async verifyWhatsApp(orderId: string, verifiedBy: 'customer' | 'merchant' = 'merchant'): Promise<FormattedOrder> {
-    const order = await this.getOrderById(orderId);
+  async verifyWhatsApp(storeId: string, orderId: string, verifiedBy: 'customer' | 'merchant'): Promise<FormattedOrder> {
+    const order = await this.getStoreOrder(storeId, orderId);
     const tag = `[WhatsApp Verified: ${verifiedBy.toUpperCase()}]`;
     const updatedNotes = order.notes
       ? (order.notes.includes('WhatsApp Verified') ? order.notes : `${order.notes} | ${tag}`)
@@ -286,20 +309,20 @@ export class OrdersService {
       .where(eq(orders.id, orderId));
 
     this.logger.log(`Order ${order.orderNumber} marked WhatsApp verified by ${verifiedBy}`);
-    return this.getOrderById(orderId);
+    return this.getStoreOrder(storeId, orderId);
   }
 
-  async updateOrderNotes(orderId: string, notes: string): Promise<FormattedOrder> {
-    await this.getOrderById(orderId);
+  async updateOrderNotes(storeId: string, orderId: string, notes: string): Promise<FormattedOrder> {
+    await this.getStoreOrder(storeId, orderId);
     await this.db.update(orders)
       .set({ notes, updatedAt: new Date() })
       .where(eq(orders.id, orderId));
 
-    return this.getOrderById(orderId);
+    return this.getStoreOrder(storeId, orderId);
   }
 
-  async bookCourier(orderId: string, courierName: string = 'Trax') {
-    const order = await this.getOrderById(orderId);
+  async bookCourier(storeId: string, orderId: string, courierName: string = 'Trax') {
+    const order = await this.getStoreOrder(storeId, orderId);
     if (order.orderStatus === 'cancelled') {
       throw new BadRequestException('Cannot book a courier for a cancelled order');
     }
@@ -321,7 +344,7 @@ export class OrdersService {
       })
       .where(eq(orders.id, orderId));
 
-    return this.getOrderById(orderId);
+    return this.getStoreOrder(storeId, orderId);
   }
 
   private async adjustStock(

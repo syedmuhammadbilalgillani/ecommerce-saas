@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const MERCHANT_ADMIN_URL = process.env.NEXT_PUBLIC_MERCHANT_ADMIN_URL || 'http://localhost:3001';
+
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -22,6 +24,8 @@ export default function TenantsManagementPage() {
   const [tenantName, setTenantName] = useState('');
   const [slug, setSlug] = useState('');
   const [slugEdited, setSlugEdited] = useState(false);
+  const [ownerEmail, setOwnerEmail] = useState('');
+  const [ownerPassword, setOwnerPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +51,19 @@ export default function TenantsManagementPage() {
     setSaving(true);
     setError(null);
     try {
-      const created = await createTenant({ name: tenantName.trim(), slug: slugify(slug || tenantName) });
+      const created = await createTenant({
+        name: tenantName.trim(),
+        slug: slugify(slug || tenantName),
+        ownerEmail: ownerEmail.trim(),
+        ownerPassword,
+      });
       setTenants(prev => [created, ...prev]);
       setIsProvisioning(false);
       setTenantName('');
       setSlug('');
       setSlugEdited(false);
+      setOwnerEmail('');
+      setOwnerPassword('');
     } catch (err) {
       setError(`Could not create tenant: ${errorMessage(err)}`);
     } finally {
@@ -131,6 +142,31 @@ export default function TenantsManagementPage() {
                     setSlug(e.target.value);
                     setSlugEdited(e.target.value !== '');
                   }}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="tOwnerEmail">Owner Email (merchant login)</Label>
+                <Input
+                  id="tOwnerEmail"
+                  type="email"
+                  placeholder="owner@brand.pk"
+                  value={ownerEmail}
+                  onChange={(e) => setOwnerEmail(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="tOwnerPassword">Owner Initial Password</Label>
+                <Input
+                  id="tOwnerPassword"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={10}
+                  value={ownerPassword}
+                  onChange={(e) => setOwnerPassword(e.target.value)}
                   required
                 />
               </div>
@@ -226,7 +262,7 @@ export default function TenantsManagementPage() {
                         {t.status === 'active' ? 'Suspend' : 'Activate'}
                       </Button>
                       <a
-                        href="http://localhost:3001"
+                        href={MERCHANT_ADMIN_URL}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center h-7 text-[11px] text-zinc-300 hover:text-zinc-100 px-2 rounded bg-zinc-800 border border-zinc-700 transition-colors"

@@ -8,6 +8,19 @@ async function reset() {
     process.exit(1);
   }
 
+  // This drops every table. Refuse unless explicitly confirmed, and never in production.
+  if (process.env.NODE_ENV === 'production') {
+    console.error('Refusing to reset a database while NODE_ENV=production.');
+    process.exit(1);
+  }
+  const host = new URL(url).host;
+  if (!process.argv.includes('--confirm')) {
+    console.error(`This will DELETE ALL DATA in ${host}.`);
+    console.error('Re-run with --confirm to proceed:  pnpm db:reset --confirm');
+    process.exit(1);
+  }
+  console.log(`Resetting database on ${host}...`);
+
   const isCloud = url.includes('neon.tech') || url.includes('sslmode=require');
   const sql = postgres(url, {
     ssl: isCloud ? 'require' : false,

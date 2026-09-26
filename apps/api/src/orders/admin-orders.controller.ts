@@ -1,23 +1,15 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Body,
-  Param,
-  Headers,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
 import { OrdersService, type OrderStatusUpdate } from './orders.service';
+import { CurrentMerchant, MerchantGuard, type MerchantContext } from '../auth/guards';
 
-@Controller(['v1/merchant', 'v1/admin'])
+@Controller('v1/merchant')
+@UseGuards(MerchantGuard)
 export class AdminOrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get('orders')
-  async listOrders(@Headers('x-store-id') headerStoreId?: string, @Query('storeId') queryStoreId?: string) {
-    const storeId = headerStoreId || queryStoreId || 'store_default';
-    const orders = await this.ordersService.listAdminOrders(storeId);
+  async listOrders(@CurrentMerchant() merchant: MerchantContext) {
+    const orders = await this.ordersService.listAdminOrders(merchant.storeId);
     return {
       success: true,
       count: orders.length,
@@ -27,10 +19,11 @@ export class AdminOrdersController {
 
   @Patch('orders/:id/status')
   async updateStatus(
+    @CurrentMerchant() merchant: MerchantContext,
     @Param('id') id: string,
     @Body() body: OrderStatusUpdate
   ) {
-    const updated = await this.ordersService.updateOrderStatus(id, body);
+    const updated = await this.ordersService.updateOrderStatus(merchant.storeId, id, body);
     return {
       success: true,
       data: updated,
@@ -39,11 +32,12 @@ export class AdminOrdersController {
 
   @Post('orders/:id/book-courier')
   async bookCourier(
+    @CurrentMerchant() merchant: MerchantContext,
     @Param('id') id: string,
     @Body() body?: { courierName?: string }
   ) {
     const courier = body?.courierName || 'Trax';
-    const result = await this.ordersService.bookCourier(id, courier);
+    const result = await this.ordersService.bookCourier(merchant.storeId, id, courier);
     return {
       success: true,
       data: result,
@@ -51,8 +45,8 @@ export class AdminOrdersController {
   }
 
   @Get('orders/:id')
-  async getOrder(@Param('id') id: string) {
-    const order = await this.ordersService.getOrderById(id);
+  async getOrder(@CurrentMerchant() merchant: MerchantContext, @Param('id') id: string) {
+    const order = await this.ordersService.getStoreOrder(merchant.storeId, id);
     return {
       success: true,
       data: order,
@@ -61,10 +55,12 @@ export class AdminOrdersController {
 
   @Patch('orders/:id/notes')
   async updateNotes(
+    @CurrentMerchant() merchant: MerchantContext,
     @Param('id') id: string,
     @Body() body: { notes: string }
   ) {
-    const updated = await this.ordersService.updateOrderNotes(id, body?.notes || '');
+    const notes = typeof body?.notes === 'string' ? body.notes : '';
+    const updated = await this.ordersService.updateOrderNotes(merchant.storeId, id, notes);
     return {
       success: true,
       data: updated,
@@ -72,11 +68,8 @@ export class AdminOrdersController {
   }
 
   @Post('orders/:id/verify-whatsapp')
-  async verifyWhatsApp(
-    @Param('id') id: string,
-    @Body() body?: { verifiedBy?: 'customer' | 'merchant' }
-  ) {
-    const verified = await this.ordersService.verifyWhatsApp(id, body?.verifiedBy || 'merchant');
+  async verifyWhatsApp(@CurrentMerchant() merchant: MerchantContext, @Param('id') id: string) {
+    const verified = await this.ordersService.verifyWhatsApp(merchant.storeId, id, 'merchant');
     return {
       success: true,
       data: verified,

@@ -4,9 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCart } from '../../lib/cart-context';
-import { formatPrice } from '../../lib/api';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+import { API_URL, formatPrice, storefrontHeaders } from '../../lib/api';
 
 const MAJOR_CITIES = [
   'Karachi',
@@ -81,7 +79,7 @@ export default function CheckoutPage() {
     try {
       const res = await fetch(`${API_URL}/v1/storefront/discounts/validate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: storefrontHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           code: promoCodeInput.trim(),
           subtotalMinor,
@@ -162,10 +160,10 @@ export default function CheckoutPage() {
 
       const res = await fetch(`${API_URL}/v1/storefront/orders/checkout`, {
         method: 'POST',
-        headers: {
+        headers: storefrontHeaders({
           'Content-Type': 'application/json',
           'x-cart-id': cart.id,
-        },
+        }),
         body: JSON.stringify(payload),
       });
 
@@ -177,7 +175,8 @@ export default function CheckoutPage() {
 
       const order = json.data;
       clearCart();
-      router.push(`/order-confirmation/${order.id}`);
+      // The access token is the shopper's proof of ownership; the confirmation page needs it.
+      router.push(`/order-confirmation/${order.id}?token=${encodeURIComponent(order.accessToken)}`);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to submit order. Please try again.');
       setIsSubmitting(false);

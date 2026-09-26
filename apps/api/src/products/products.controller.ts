@@ -1,16 +1,14 @@
-import { Controller, Get, Param, Headers, Query, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Param, NotFoundException, UseGuards } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import { StorefrontStore, StorefrontStoreGuard } from '../auth/guards';
 
 @Controller('v1/storefront/products')
+@UseGuards(StorefrontStoreGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
-  async list(
-    @Headers('x-store-id') headerStoreId?: string,
-    @Query('storeId') queryStoreId?: string
-  ) {
-    const storeId = headerStoreId || queryStoreId || 'store_default';
+  async list(@StorefrontStore() storeId: string) {
     return {
       success: true,
       storeId,
@@ -19,15 +17,10 @@ export class ProductsController {
   }
 
   @Get(':slug')
-  async getBySlug(
-    @Param('slug') slug: string,
-    @Headers('x-store-id') headerStoreId?: string,
-    @Query('storeId') queryStoreId?: string
-  ) {
-    const storeId = headerStoreId || queryStoreId || 'store_default';
+  async getBySlug(@StorefrontStore() storeId: string, @Param('slug') slug: string) {
     const product = await this.productsService.getProductBySlug(storeId, slug);
     if (!product) {
-      throw new NotFoundException(`Product with slug '${slug}' not found for store '${storeId}'`);
+      throw new NotFoundException(`Product with slug '${slug}' not found`);
     }
     return {
       success: true,

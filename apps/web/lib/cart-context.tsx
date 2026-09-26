@@ -1,8 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+import { API_URL, storefrontHeaders } from './api';
 const CART_ID_KEY = 'posflow_cart_id';
 
 export interface CartItem {
@@ -64,7 +63,10 @@ function writeCartId(id: string | null) {
 async function cartRequest(path: string, init: RequestInit = {}): Promise<Cart> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/v1/storefront/cart${path}`, init);
+    res = await fetch(`${API_URL}/v1/storefront/cart${path}`, {
+      ...init,
+      headers: storefrontHeaders(init.headers as Record<string, string> | undefined),
+    });
   } catch {
     throw new Error('Could not reach the store. Please check your connection and try again.');
   }

@@ -283,13 +283,44 @@ async function initDatabase() {
     await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "courier_tracking_number" text;`;
     await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "courier_status" text;`;
 
+    // Secret required to view an order on the storefront (prevents order-id guessing)
+    await sql`ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "access_token" text;`;
+
+    // 15. Users & Sessions (merchant + platform admin auth)
+    await sql`
+      CREATE TABLE IF NOT EXISTS "users" (
+        "id" text PRIMARY KEY NOT NULL,
+        "email" text NOT NULL,
+        "name" text,
+        "password_hash" text NOT NULL,
+        "role" text NOT NULL,
+        "tenant_id" text REFERENCES "tenants"("id") ON DELETE CASCADE,
+        "status" text DEFAULT 'active' NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+        "updated_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS "sessions" (
+        "id" text PRIMARY KEY NOT NULL,
+        "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "expires_at" timestamp with time zone NOT NULL,
+        "created_at" timestamp with time zone DEFAULT now() NOT NULL
+      );
+    `;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_users_email" ON "users" ("email");`;
+    await sql`CREATE INDEX IF NOT EXISTS "idx_users_tenant" ON "users" ("tenant_id");`;
+    await sql`CREATE INDEX IF NOT EXISTS "idx_sessions_user" ON "sessions" ("user_id");`;
+
     // Performance Indexes
     await sql`CREATE INDEX IF NOT EXISTS "idx_categories_parent" ON "categories" ("parent_id");`;
-    await sql`CREATE INDEX IF NOT EXISTS "idx_collections_store_slug" ON "collections" ("store_id", "slug");`;
+    await sql`DROP INDEX IF EXISTS "idx_collections_store_slug";`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_collections_store_slug" ON "collections" ("store_id", "slug");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_collections_tenant" ON "collections" ("tenant_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_col_prod_collection" ON "collection_products" ("collection_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_col_prod_product" ON "collection_products" ("product_id");`;
-    await sql`CREATE INDEX IF NOT EXISTS "idx_products_store_slug" ON "products" ("store_id", "slug");`;
+    await sql`DROP INDEX IF EXISTS "idx_products_store_slug";`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_products_store_slug" ON "products" ("store_id", "slug");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_products_tenant" ON "products" ("tenant_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_products_category" ON "products" ("category_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_variants_product" ON "product_variants" ("product_id");`;
@@ -302,8 +333,10 @@ async function initDatabase() {
     await sql`CREATE INDEX IF NOT EXISTS "idx_orders_created" ON "orders" ("created_at");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_order_items_order" ON "order_items" ("order_id");`;
     await sql`CREATE INDEX IF NOT EXISTS "idx_customers_store" ON "customers" ("store_id");`;
-    await sql`CREATE INDEX IF NOT EXISTS "idx_customers_phone" ON "customers" ("store_id", "phone");`;
-    await sql`CREATE INDEX IF NOT EXISTS "idx_discounts_store_code" ON "discounts" ("store_id", "code");`;
+    await sql`DROP INDEX IF EXISTS "idx_customers_phone";`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_customers_store_phone" ON "customers" ("store_id", "phone");`;
+    await sql`DROP INDEX IF EXISTS "idx_discounts_store_code";`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS "uq_discounts_store_code" ON "discounts" ("store_id", upper("code"));`;
 
     // Seed Standard Shopify Product Taxonomy Categories
     console.log('Seeding Standard Shopify Product Taxonomy Categories...');
@@ -336,28 +369,22 @@ async function initDatabase() {
     console.log('Ensuring default tenant and store exist...');
     await sql`
       INSERT INTO "tenants" ("id", "name", "default_currency", "default_locale", "status")
-      VALUES ('tenant_default', 'Outfitters Pakistan', 'PKR', 'en', 'active')
-      ON CONFLICT ("id") DO NOTHING;
-    `;
-
-    await sql`
-      INSERT INTO "tenants" ("id", "name", "default_currency", "default_locale", "status")
       VALUES ('ten_pilot_01', 'Outfitters Pakistan', 'PKR', 'en', 'active')
       ON CONFLICT ("id") DO NOTHING;
     `;
 
     await sql`
       INSERT INTO "stores" ("id", "tenant_id", "name", "slug", "currency", "default_locale")
-      VALUES ('store_default', 'tenant_default', 'Outfitters Official', 'outfitters-pk', 'PKR', 'en')
+      VALUES ('store_default', 'ten_pilot_01', 'Outfitters Official', 'outfitters-pk', 'PKR', 'en')
       ON CONFLICT ("id") DO NOTHING;
     `;
 
     // Seed default merchandising collections
     console.log('Seeding default collections...');
     const defaultCollections = [
-      { id: 'col_summer', tenantId: 'tenant_default', storeId: 'store_default', title: 'Summer 2026 Collection', slug: 'summer-2026', description: 'Lightweight linen & breathable cottons for peak summer.' },
-      { id: 'col_mens', tenantId: 'tenant_default', storeId: 'store_default', title: "Men's Apparel", slug: 'mens-apparel', description: 'Curated menswear essentials handcrafted for comfort.' },
-      { id: 'col_bestsellers', tenantId: 'tenant_default', storeId: 'store_default', title: 'Best Sellers', slug: 'best-sellers', description: 'Most-ordered pieces across Pakistan.' },
+      { id: 'col_summer', tenantId: 'ten_pilot_01', storeId: 'store_default', title: 'Summer 2026 Collection', slug: 'summer-2026', description: 'Lightweight linen & breathable cottons for peak summer.' },
+      { id: 'col_mens', tenantId: 'ten_pilot_01', storeId: 'store_default', title: "Men's Apparel", slug: 'mens-apparel', description: 'Curated menswear essentials handcrafted for comfort.' },
+      { id: 'col_bestsellers', tenantId: 'ten_pilot_01', storeId: 'store_default', title: 'Best Sellers', slug: 'best-sellers', description: 'Most-ordered pieces across Pakistan.' },
     ];
 
     for (const col of defaultCollections) {
@@ -373,7 +400,7 @@ async function initDatabase() {
     const defaultDiscounts = [
       {
         id: 'disc_welcome10',
-        tenantId: 'tenant_default',
+        tenantId: 'ten_pilot_01',
         storeId: 'store_default',
         code: 'WELCOME10',
         title: '10% Off Welcome Promotion',
@@ -389,7 +416,7 @@ async function initDatabase() {
       },
       {
         id: 'disc_flat500',
-        tenantId: 'tenant_default',
+        tenantId: 'ten_pilot_01',
         storeId: 'store_default',
         code: 'FLAT500',
         title: 'Rs. 500 Flat Savings',
@@ -405,7 +432,7 @@ async function initDatabase() {
       },
       {
         id: 'disc_freeship',
-        tenantId: 'tenant_default',
+        tenantId: 'ten_pilot_01',
         storeId: 'store_default',
         code: 'FREESHIP',
         title: 'Free Standard Shipping across Pakistan',
@@ -442,7 +469,7 @@ async function initDatabase() {
     const defaultCustomers = [
       {
         id: 'cust_hamza_01',
-        tenantId: 'tenant_default',
+        tenantId: 'ten_pilot_01',
         storeId: 'store_default',
         firstName: 'Hamza',
         lastName: 'Khan',
@@ -456,7 +483,7 @@ async function initDatabase() {
       },
       {
         id: 'cust_ayesha_02',
-        tenantId: 'tenant_default',
+        tenantId: 'ten_pilot_01',
         storeId: 'store_default',
         firstName: 'Ayesha',
         lastName: 'Tariq',
@@ -470,7 +497,7 @@ async function initDatabase() {
       },
       {
         id: 'cust_bilal_03',
-        tenantId: 'tenant_default',
+        tenantId: 'ten_pilot_01',
         storeId: 'store_default',
         firstName: 'Bilal',
         lastName: 'Ahmed',
@@ -497,6 +524,33 @@ async function initDatabase() {
         ON CONFLICT ("id") DO NOTHING;
       `;
     }
+
+    // Repair denormalized tenant_id so it always matches the owning store's tenant.
+    // Earlier seeds wrote a different tenant id than the store's real owner.
+    console.log('Repairing tenant_id on store-scoped rows...');
+    for (const table of ['products', 'collections', 'carts', 'orders', 'customers', 'discounts']) {
+      await sql`
+        UPDATE ${sql(table)} AS t SET "tenant_id" = s."tenant_id"
+        FROM "stores" s
+        WHERE t."store_id" = s."id" AND t."tenant_id" <> s."tenant_id";
+      `;
+    }
+    await sql`
+      UPDATE "product_variants" v SET "tenant_id" = p."tenant_id"
+      FROM "products" p WHERE v."product_id" = p."id" AND v."tenant_id" <> p."tenant_id";
+    `;
+    await sql`
+      UPDATE "collection_products" cp SET "tenant_id" = c."tenant_id"
+      FROM "collections" c WHERE cp."collection_id" = c."id" AND cp."tenant_id" <> c."tenant_id";
+    `;
+    await sql`
+      UPDATE "order_items" oi SET "tenant_id" = o."tenant_id"
+      FROM "orders" o WHERE oi."order_id" = o."id" AND oi."tenant_id" <> o."tenant_id";
+    `;
+    await sql`
+      UPDATE "customer_addresses" ca SET "tenant_id" = c."tenant_id"
+      FROM "customers" c WHERE ca."customer_id" = c."id" AND ca."tenant_id" <> c."tenant_id";
+    `;
 
     console.log('✅ SUCCESS! All tables, indexes, Standard Taxonomy, Collections, Discounts, and Customers are initialized.');
     await sql.end();

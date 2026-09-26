@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
+import { API_URL, storefrontHeaders } from '../../../lib/api';
 
 interface WhatsAppConfirmButtonProps {
   orderId: string;
+  accessToken: string;
   orderNumber: string;
   totalFormatted: string;
   customerName: string;
@@ -14,6 +16,7 @@ interface WhatsAppConfirmButtonProps {
 
 export function WhatsAppConfirmButton({
   orderId,
+  accessToken,
   orderNumber,
   totalFormatted,
   customerName,
@@ -32,9 +35,9 @@ export function WhatsAppConfirmButton({
     if (!verified) {
       setLoading(true);
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
-        await fetch(`${apiUrl}/v1/storefront/orders/${orderId}/verify-whatsapp`, {
+        await fetch(`${API_URL}/v1/storefront/orders/${encodeURIComponent(orderId)}/verify-whatsapp`, {
           method: 'POST',
+          headers: storefrontHeaders({ 'x-order-token': accessToken }),
         });
         setVerified(true);
       } catch (err) {

@@ -9,8 +9,10 @@ import {
   Headers,
   Query,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { CartService } from './cart.service';
+import { StorefrontStore, StorefrontStoreGuard } from '../auth/guards';
 
 const MAX_LINE_QUANTITY = 999;
 
@@ -24,14 +26,15 @@ function parseQuantity(raw: unknown, { allowZero }: { allowZero: boolean }): num
 }
 
 @Controller('v1/storefront/cart')
+@UseGuards(StorefrontStoreGuard)
 export class CartController {
   constructor(private readonly cartService: CartService) {}
 
   @Get()
   async getCart(
+    @StorefrontStore() storeId: string,
     @Headers('x-cart-id') headerCartId?: string,
-    @Query('cartId') queryCartId?: string,
-    @Headers('x-store-id') storeId?: string
+    @Query('cartId') queryCartId?: string
   ) {
     const cartId = headerCartId || queryCartId;
     const cart = await this.cartService.getOrCreateCart(cartId, storeId);
@@ -43,9 +46,9 @@ export class CartController {
 
   @Post('items')
   async addItem(
+    @StorefrontStore() storeId: string,
     @Body() body: { variantId: string; quantity?: number },
-    @Headers('x-cart-id') headerCartId?: string,
-    @Headers('x-store-id') storeId?: string
+    @Headers('x-cart-id') headerCartId?: string
   ) {
     if (!body?.variantId) {
       throw new BadRequestException('variantId is required');
@@ -62,6 +65,7 @@ export class CartController {
 
   @Patch('items/:itemId')
   async updateQuantity(
+    @StorefrontStore() storeId: string,
     @Param('itemId') itemId: string,
     @Body() body: { quantity: number },
     @Headers('x-cart-id') headerCartId?: string,
@@ -73,7 +77,7 @@ export class CartController {
     }
 
     const qty = parseQuantity(body?.quantity, { allowZero: true });
-    const cart = await this.cartService.updateItemQuantity(cartId, itemId, qty);
+    const cart = await this.cartService.updateItemQuantity(cartId, itemId, qty, storeId);
 
     return {
       success: true,
@@ -83,6 +87,7 @@ export class CartController {
 
   @Delete('items/:itemId')
   async removeItem(
+    @StorefrontStore() storeId: string,
     @Param('itemId') itemId: string,
     @Headers('x-cart-id') headerCartId?: string,
     @Query('cartId') queryCartId?: string
@@ -92,7 +97,7 @@ export class CartController {
       throw new BadRequestException('x-cart-id header or cartId query parameter is required');
     }
 
-    const cart = await this.cartService.removeItem(cartId, itemId);
+    const cart = await this.cartService.removeItem(cartId, itemId, storeId);
     return {
       success: true,
       data: cart,

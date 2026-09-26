@@ -40,9 +40,7 @@ export interface AnalyticsSummary {
 export class AnalyticsService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  async getStoreAnalytics(
-    storeId: string = 'store_default'
-  ): Promise<AnalyticsSummary> {
+  async getStoreAnalytics(storeId: string): Promise<AnalyticsSummary> {
     // 1. Orders for this store only; cancelled orders never count as sales
     const allOrders = await this.db
       .select()

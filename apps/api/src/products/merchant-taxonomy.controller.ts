@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Body, Headers, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import { CurrentMerchant, MerchantGuard, type MerchantContext } from '../auth/guards';
 
-@Controller(['v1/merchant', 'v1/admin'])
+@Controller('v1/merchant')
+@UseGuards(MerchantGuard)
 export class MerchantTaxonomyController {
   constructor(private readonly productsService: ProductsService) {}
 
@@ -15,12 +17,8 @@ export class MerchantTaxonomyController {
   }
 
   @Get('collections')
-  async listCollections(
-    @Headers('x-store-id') headerStoreId?: string,
-    @Query('storeId') queryStoreId?: string
-  ) {
-    const storeId = headerStoreId || queryStoreId || 'store_default';
-    const data = await this.productsService.listCollections(storeId);
+  async listCollections(@CurrentMerchant() merchant: MerchantContext) {
+    const data = await this.productsService.listCollections(merchant.storeId);
     return {
       success: true,
       data,
@@ -28,13 +26,8 @@ export class MerchantTaxonomyController {
   }
 
   @Post('collections')
-  async createCollection(
-    @Body() body: any,
-    @Headers('x-store-id') headerStoreId?: string,
-    @Query('storeId') queryStoreId?: string
-  ) {
-    const storeId = headerStoreId || queryStoreId || 'store_default';
-    const data = await this.productsService.createCollection(storeId, body);
+  async createCollection(@CurrentMerchant() merchant: MerchantContext, @Body() body: any) {
+    const data = await this.productsService.createCollection(merchant.storeId, body);
     return {
       success: true,
       data,

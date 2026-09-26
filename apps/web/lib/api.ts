@@ -1,4 +1,11 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+
+/** Which store this storefront deployment sells for. The API rejects unknown or suspended stores. */
+export const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID || 'store_default';
+
+export function storefrontHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return { 'x-store-id': STORE_ID, ...extra };
+}
 
 export interface ProductVariant {
   id: string;
@@ -52,7 +59,7 @@ export function formatPrice(amountMinor: number, currency: string = 'PKR'): stri
 }
 
 async function fetchData<T>(path: string, init: RequestInit & { next?: { revalidate?: number; tags?: string[] } }): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, init);
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers: storefrontHeaders() });
   if (!res.ok) {
     throw new Error(`API ${path} failed: ${res.status} ${res.statusText}`);
   }
@@ -62,7 +69,7 @@ async function fetchData<T>(path: string, init: RequestInit & { next?: { revalid
 
 /** Like fetchData, but a 404 means "doesn't exist" and returns null. */
 async function fetchOptional<T>(path: string, init: RequestInit & { next?: { revalidate?: number; tags?: string[] } }): Promise<T | null> {
-  const res = await fetch(`${API_URL}${path}`, init);
+  const res = await fetch(`${API_URL}${path}`, { ...init, headers: storefrontHeaders() });
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`API ${path} failed: ${res.status} ${res.statusText}`);

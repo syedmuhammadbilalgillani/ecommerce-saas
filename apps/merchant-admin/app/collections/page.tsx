@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
+const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3000';
+
 export default function MerchantCollectionsPage() {
   const [collections, setCollections] = useState<StoreCollection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,7 +210,7 @@ export default function MerchantCollectionsPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <a
-                      href={`http://localhost:3000/collections/${col.slug}`}
+                      href={`${STOREFRONT_URL}/collections/${col.slug}`}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"

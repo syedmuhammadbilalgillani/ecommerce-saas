@@ -1,16 +1,24 @@
 import Link from 'next/link';
-import { getPlatformMetrics, getPlatformTenants, formatPrice } from '@/lib/api';
+import { redirect } from 'next/navigation';
+import { AuthError, getPlatformMetrics, getPlatformTenants, formatPrice } from '@/lib/api';
+import { serverAuthHeaders } from '@/lib/server-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export const revalidate = 0;
 
+const MERCHANT_ADMIN_URL = process.env.NEXT_PUBLIC_MERCHANT_ADMIN_URL || 'http://localhost:3001';
+
 export default async function PlatformAdminDashboard() {
-  const [metrics, rawTenants] = await Promise.all([
-    getPlatformMetrics(),
-    getPlatformTenants(),
-  ]);
+  const auth = await serverAuthHeaders();
+  let metrics, rawTenants;
+  try {
+    [metrics, rawTenants] = await Promise.all([getPlatformMetrics(auth), getPlatformTenants(auth)]);
+  } catch (err) {
+    if (err instanceof AuthError) redirect('/login');
+    throw err;
+  }
 
   const tenants = rawTenants;
 
@@ -132,12 +140,12 @@ export default async function PlatformAdminDashboard() {
                   </TableCell>
                   <TableCell className="text-right">
                     <a
-                      href="http://localhost:3001"
+                      href={MERCHANT_ADMIN_URL}
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1 rounded bg-zinc-800/60 border border-zinc-700/60 transition-colors"
                     >
-                      Login as Merchant ↗
+                      Merchant portal ↗
                     </a>
                   </TableCell>
                 </TableRow>

@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { DRIZZLE } from '../db/db.module';
 import { resolveTenantId } from '../db/store-context';
 import { type Database, carts, cartItems, productVariants, eq, and, sql } from '@repo/db';
@@ -40,8 +41,9 @@ const CART_WITH_ITEMS = {
 export class CartService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
+  // Cart ids act as the shopper's bearer credential for their cart, so they must be unguessable.
   private generateId(prefix: string): string {
-    return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    return `${prefix}_${randomBytes(16).toString('hex')}`;
   }
 
   /** Returns the cart, or null if it does not exist. Never creates one. */
@@ -53,10 +55,11 @@ export class CartService {
     return record ? this.formatDbCart(record) : null;
   }
 
-  async getOrCreateCart(cartId?: string, storeId: string = 'store_default'): Promise<FormattedCart> {
+  async getOrCreateCart(cartId: string | undefined, storeId: string): Promise<FormattedCart> {
     if (cartId) {
       const existing = await this.getCart(cartId);
-      if (existing) return existing;
+      // A cart from another store is treated as missing; the shopper gets a fresh cart here.
+      if (existing && existing.storeId === storeId) return existing;
     }
 
     // Unknown or missing cart id: always mint a server-generated id rather than trusting the client's.
@@ -71,7 +74,7 @@ export class CartService {
     cartId: string | undefined,
     variantId: string,
     quantity: number,
-    storeId: string = 'store_default'
+    storeId: string
   ): Promise<FormattedCart> {
     const activeCart = await this.getOrCreateCart(cartId, storeId);
 
@@ -102,33 +105,35 @@ export class CartService {
       });
     }
 
-    return this.requireCart(activeCart.id);
+    return this.requireCart(activeCart.id, storeId);
   }
 
-  async updateItemQuantity(cartId: string, itemId: string, quantity: number): Promise<FormattedCart> {
+  async updateItemQuantity(cartId: string, itemId: string, quantity: number, storeId: string): Promise<FormattedCart> {
     if (quantity <= 0) {
-      return this.removeItem(cartId, itemId);
+      return this.removeItem(cartId, itemId, storeId);
     }
+    await this.requireCart(cartId, storeId);
 
     await this.db
       .update(cartItems)
       .set({ quantity, updatedAt: new Date() })
       .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
 
-    return this.requireCart(cartId);
+    return this.requireCart(cartId, storeId);
   }
 
-  async removeItem(cartId: string, itemId: string): Promise<FormattedCart> {
+  async removeItem(cartId: string, itemId: string, storeId: string): Promise<FormattedCart> {
+    await this.requireCart(cartId, storeId);
     await this.db
       .delete(cartItems)
       .where(and(eq(cartItems.id, itemId), eq(cartItems.cartId, cartId)));
 
-    return this.requireCart(cartId);
+    return this.requireCart(cartId, storeId);
   }
 
-  private async requireCart(cartId: string): Promise<FormattedCart> {
+  private async requireCart(cartId: string, storeId: string): Promise<FormattedCart> {
     const cart = await this.getCart(cartId);
-    if (!cart) {
+    if (!cart || cart.storeId !== storeId) {
       throw new NotFoundException(`Cart '${cartId}' not found`);
     }
     return cart;

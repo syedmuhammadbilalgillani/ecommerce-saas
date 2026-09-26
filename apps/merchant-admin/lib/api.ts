@@ -2,16 +2,23 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
 
 export { formatPrice } from './utils';
 
+/** Thrown when the API says the merchant is not signed in (or the session expired). */
+export class AuthError extends Error {}
+
 /**
  * Calls the API and returns `data` from the `{ success, data }` envelope.
  * Throws with the API's own message on any failure — callers must surface it,
  * never pretend the action succeeded.
+ *
+ * In the browser the session cookie is sent automatically. Server components must pass
+ * the incoming cookie header via `init.headers` (see `serverAuthHeaders`).
  */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_URL}${path}`, {
       cache: 'no-store',
+      credentials: 'include',
       ...init,
       headers: {
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -23,6 +30,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const json = await res.json().catch(() => null);
+  if (res.status === 401) {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.assign('/login');
+    }
+    throw new AuthError(json?.message || 'Please sign in');
+  }
   if (!res.ok) {
     const message = Array.isArray(json?.message) ? json.message.join(', ') : json?.message;
     throw new Error(message || `Request failed (${res.status})`);
@@ -32,6 +45,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong';
+}
+
+// ----------------------------------------------------
+// Auth API
+// ----------------------------------------------------
+export interface CurrentMerchant {
+  id: string;
+  email: string;
+  name: string | null;
+  tenantId: string;
+  storeId: string;
+}
+
+export async function login(email: string, password: string): Promise<void> {
+  await request('/v1/auth/merchant/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export async function logout(): Promise<void> {
+  await request('/v1/auth/merchant/logout', { method: 'POST' });
+}
+
+export async function getCurrentMerchant(): Promise<CurrentMerchant> {
+  return request<CurrentMerchant>('/v1/auth/merchant/me');
 }
 
 export interface TaxonomyCategory {
@@ -171,8 +210,8 @@ function mapRawOrder(o: any): MerchantOrder {
 // ----------------------------------------------------
 // Orders API
 // ----------------------------------------------------
-export async function getOrders(): Promise<MerchantOrder[]> {
-  const list = await request<any[]>('/v1/merchant/orders');
+export async function getOrders(init?: RequestInit): Promise<MerchantOrder[]> {
+  const list = await request<any[]>('/v1/merchant/orders', init);
   return list.map(mapRawOrder);
 }
 
@@ -347,6 +386,6 @@ export interface MerchantAnalytics {
   }>;
 }
 
-export async function getAnalytics(): Promise<MerchantAnalytics> {
-  return request<MerchantAnalytics>('/v1/merchant/analytics');
+export async function getAnalytics(init?: RequestInit): Promise<MerchantAnalytics> {
+  return request<MerchantAnalytics>('/v1/merchant/analytics', init);
 }

@@ -1,6 +1,6 @@
-import { Inject, Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import type { DbExecutor } from '../db/store-context';
+import { resolveTenantId, type DbExecutor } from '../db/store-context';
 import { type Database, discounts, eq, and, sql } from '@repo/db';
 
 export interface ValidateDiscountResult {
@@ -38,8 +38,7 @@ export class DiscountsService {
   async validateDiscount(
     rawCode: string,
     subtotalMinor: number,
-    storeId: string = 'store_default',
-    tenantId: string = 'ten_pilot_01'
+    storeId: string
   ): Promise<ValidateDiscountResult> {
     if (!rawCode) {
       throw new BadRequestException('Discount code is required');
@@ -53,6 +52,7 @@ export class DiscountsService {
       .from(discounts)
       .where(
         and(
+          eq(discounts.storeId, storeId),
           eq(sql`UPPER(${discounts.code})`, code),
           eq(discounts.isActive, true)
         )
@@ -111,10 +111,11 @@ export class DiscountsService {
     };
   }
 
-  async getStoreDiscounts(storeId: string = 'store_default') {
+  async getStoreDiscounts(storeId: string) {
     const list = await this.db
       .select()
       .from(discounts)
+      .where(eq(discounts.storeId, storeId))
       .orderBy(sql`${discounts.createdAt} DESC`);
 
     return list;
@@ -122,8 +123,7 @@ export class DiscountsService {
 
   async createDiscount(
     dto: CreateDiscountDto,
-    storeId: string = 'store_default',
-    tenantId: string = 'ten_pilot_01'
+    storeId: string
   ) {
     if (!dto.code || !dto.title || dto.value === undefined) {
       throw new BadRequestException('Code, Title, and Value are required');
@@ -143,6 +143,17 @@ export class DiscountsService {
     }
 
     const code = dto.code.trim().toUpperCase();
+    const tenantId = await resolveTenantId(this.db, storeId);
+
+    const existing = await this.db
+      .select({ id: discounts.id })
+      .from(discounts)
+      .where(and(eq(discounts.storeId, storeId), eq(sql`UPPER(${discounts.code})`, code)))
+      .limit(1);
+    if (existing.length > 0) {
+      throw new ConflictException(`Discount code "${code}" already exists in this store`);
+    }
+
     const id = this.generateId('disc');
 
     const created = await this.db
@@ -168,12 +179,12 @@ export class DiscountsService {
     return created[0];
   }
 
-  async incrementUsage(code: string, executor: DbExecutor = this.db) {
+  async incrementUsage(code: string, storeId: string, executor: DbExecutor = this.db) {
     await executor
       .update(discounts)
       .set({
         timesUsed: sql`${discounts.timesUsed} + 1`,
       } as any)
-      .where(eq(sql`UPPER(${discounts.code})`, code.toUpperCase()));
+      .where(and(eq(discounts.storeId, storeId), eq(sql`UPPER(${discounts.code})`, code.toUpperCase())));
   }
 }

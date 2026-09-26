@@ -1,18 +1,19 @@
 import React from 'react';
 import Link from 'next/link';
-import { formatPrice } from '../../../lib/api';
+import { API_URL, formatPrice, storefrontHeaders } from '../../../lib/api';
 import { WhatsAppConfirmButton } from './WhatsAppConfirmButton';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
 
 interface OrderConfirmationProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ token?: string }>;
 }
 
-async function getOrder(id: string) {
+async function getOrder(id: string, token: string | undefined) {
+  if (!token) return null;
   try {
-    const res = await fetch(`${API_URL}/v1/storefront/orders/${id}`, {
+    const res = await fetch(`${API_URL}/v1/storefront/orders/${encodeURIComponent(id)}`, {
       cache: 'no-store',
+      headers: storefrontHeaders({ 'x-order-token': token }),
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -23,17 +24,18 @@ async function getOrder(id: string) {
   }
 }
 
-export default async function OrderConfirmationPage({ params }: OrderConfirmationProps) {
+export default async function OrderConfirmationPage({ params, searchParams }: OrderConfirmationProps) {
   const { id } = await params;
-  const order = await getOrder(id);
+  const { token } = await searchParams;
+  const order = await getOrder(id, token);
 
   if (!order) {
     return (
       <div style={{ maxWidth: '600px', margin: '4rem auto', padding: '2rem', textAlign: 'center' }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
-        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem' }}>Order Placed!</h1>
+        <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem' }}>Order not found</h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
-          Your order has been recorded. Reference ID: <code style={{ color: 'var(--accent)' }}>{id}</code>
+          We couldn&apos;t load this order. Please open the link from your order confirmation, or contact the store on WhatsApp.
         </p>
         <Link href="/" className="btn" style={{ padding: '0.8rem 1.75rem', textDecoration: 'none' }}>
           Back to Store
@@ -102,6 +104,7 @@ export default async function OrderConfirmationPage({ params }: OrderConfirmatio
       {order.paymentMethod === 'cod' && (
         <WhatsAppConfirmButton
           orderId={order.id}
+          accessToken={token!}
           orderNumber={order.orderNumber}
           totalFormatted={Math.round(order.totalMinor / 100).toLocaleString()}
           customerName={order.customerName}

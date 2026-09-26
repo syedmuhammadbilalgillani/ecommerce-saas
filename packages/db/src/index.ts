@@ -1,5 +1,5 @@
-import { pgTable, text, timestamp, boolean, integer, index, jsonb } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
@@ -67,7 +67,7 @@ export const collections = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_collections_store_slug').on(table.storeId, table.slug),
+    uniqueIndex('uq_collections_store_slug').on(table.storeId, table.slug),
     index('idx_collections_tenant').on(table.tenantId),
   ]
 );
@@ -111,7 +111,7 @@ export const products = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_products_store_slug').on(table.storeId, table.slug),
+    uniqueIndex('uq_products_store_slug').on(table.storeId, table.slug),
     index('idx_products_tenant').on(table.tenantId),
     index('idx_products_category').on(table.categoryId),
   ]
@@ -205,6 +205,8 @@ export const orders = pgTable(
     shippingFeeMinor: integer('shipping_fee_minor').default(0).notNull(),
     totalMinor: integer('total_minor').notNull(),
     notes: text('notes'),
+    // Secret handed to the shopper at checkout; required to view the order on the storefront.
+    accessToken: text('access_token'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -263,7 +265,7 @@ export const customers = pgTable(
   (table) => [
     index('idx_customers_store').on(table.storeId),
     index('idx_customers_tenant').on(table.tenantId),
-    index('idx_customers_phone').on(table.storeId, table.phone),
+    uniqueIndex('uq_customers_store_phone').on(table.storeId, table.phone),
   ]
 );
 
@@ -320,16 +322,67 @@ export const discounts = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('idx_discounts_store_code').on(table.storeId, table.code),
+    uniqueIndex('uq_discounts_store_code').on(table.storeId, sql`upper(${table.code})`),
     index('idx_discounts_tenant').on(table.tenantId),
   ]
 );
 
 // ----------------------------------------------------
-// 9. Relations
+// 9. Users & Sessions (Merchant + Platform Admin auth)
+// ----------------------------------------------------
+export const users = pgTable(
+  'users',
+  {
+    id: text('id').primaryKey().notNull(),
+    email: text('email').notNull(), // stored lowercased
+    name: text('name'),
+    passwordHash: text('password_hash').notNull(), // scrypt: "scrypt$<salt b64>$<hash b64>"
+    role: text('role').notNull(), // 'merchant' | 'platform_admin'
+    tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }), // null for platform admins
+    status: text('status').default('active').notNull(), // 'active' | 'disabled'
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_users_email').on(table.email),
+    index('idx_users_tenant').on(table.tenantId),
+  ]
+);
+
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey().notNull(), // sha256 of the session token; the raw token is never stored
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_sessions_user').on(table.userId),
+  ]
+);
+
+// ----------------------------------------------------
+// 10. Relations
 // ----------------------------------------------------
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   stores: many(stores),
+  users: many(users),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [users.tenantId],
+    references: [tenants.id],
+  }),
+  sessions: many(sessions),
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id],
+  }),
 }));
 
 export const storesRelations = relations(stores, ({ one, many }) => ({
@@ -458,7 +511,7 @@ export const discountsRelations = relations(discounts, ({ one }) => ({
 }));
 
 // ----------------------------------------------------
-// 10. Schema & Client Factory
+// 11. Schema & Client Factory
 // ----------------------------------------------------
 export const schema = {
   tenants,
@@ -475,7 +528,11 @@ export const schema = {
   customers,
   customerAddresses,
   discounts,
+  users,
+  sessions,
   tenantsRelations,
+  usersRelations,
+  sessionsRelations,
   storesRelations,
   categoriesRelations,
   collectionsRelations,
@@ -508,3 +565,6 @@ export function createDbClient(connectionString: string) {
 
 // Re-export core Drizzle utilities
 export * from 'drizzle-orm';
+
+// Password hashing shared by the API and CLI scripts
+export * from './password.ts';

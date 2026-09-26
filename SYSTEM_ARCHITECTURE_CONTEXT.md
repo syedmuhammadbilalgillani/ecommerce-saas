@@ -148,6 +148,30 @@ ecommerce-saas/
 
 ---
 
+### `users` / `sessions` (Auth — added in Hardening Phase 2)
+* `users`: `id`, `email` (UNIQUE, lowercased), `name`, `password_hash` (scrypt), `role` (`merchant` | `platform_admin`), `tenant_id` (null for platform admins), `status`
+* `sessions`: `id` = **sha256 of the session token** (raw token never stored), `user_id`, `expires_at` (7 days)
+* `orders.access_token` = sha256 of the shopper's order token (storefront order lookups require the raw token)
+* Unique per store: `products(store_id, slug)`, `collections(store_id, slug)`, `discounts(store_id, upper(code))`, `customers(store_id, phone)`
+
+## Auth & Tenant Scoping (Hardening Phase 2)
+
+* **Merchant routes (`/v1/merchant/*`)** use `MerchantGuard`: session cookie `posflow_merchant_session` → user → tenant. The store is decided **server-side**: `x-store-id` is honored only if that store belongs to the user's tenant (else 403); otherwise the tenant's first store. Services always receive `storeId` from `@CurrentMerchant()`, never from the client.
+* **Platform routes (`/v1/platform/*`)** use `PlatformGuard` (cookie `posflow_platform_session`, role `platform_admin`).
+* **Storefront routes (`/v1/storefront/*`)** use `StorefrontStoreGuard`: store from `x-store-id` (else `DEFAULT_STORE_ID`); unknown or suspended-tenant stores return 404.
+* Suspending a tenant immediately invalidates its merchants' sessions (checked on every request).
+* Accounts: `pnpm db:create-user --role platform_admin --email ...` (hidden password prompt). Platform admins create a tenant together with its owner's merchant login.
+
+### Environment variables
+| Variable | App | Default | Purpose |
+| :--- | :--- | :--- | :--- |
+| `CORS_ORIGINS` | api | `http://localhost:3000,3001,3002` | Comma-separated origins allowed to send cookies |
+| `COOKIE_DOMAIN` | api | (host-only) | e.g. `.example.com` so admin apps on subdomains share the session cookie |
+| `DEFAULT_STORE_ID` | api | `store_default` | Store used when a storefront request has no `x-store-id` |
+| `NEXT_PUBLIC_STORE_ID` | web | `store_default` | Store this storefront deployment sells for |
+| `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | Links to the live storefront |
+| `NEXT_PUBLIC_MERCHANT_ADMIN_URL` | platform-admin | `http://localhost:3001` | Link to the merchant portal |
+
 ## 5. API Surface (Storefront v1)
 
 | Method | Endpoint | Description | Performance Target |

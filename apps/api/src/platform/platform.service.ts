@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, tenants, stores, orders, eq, and, ne, gte, sql } from '@repo/db';
+import { randomBytes } from 'node:crypto';
+import { type Database, tenants, stores, orders, users, eq, and, ne, gte, sql, hashPassword, MIN_PASSWORD_LENGTH } from '@repo/db';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TENANT_STATUSES = ['active', 'suspended'] as const;
@@ -68,24 +69,37 @@ export class PlatformService {
     }));
   }
 
-  async createTenant(payload: { name: string; slug: string }) {
+  async createTenant(payload: { name: string; slug: string; ownerEmail: string; ownerPassword: string }) {
     const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
     const slug = typeof payload?.slug === 'string' ? payload.slug.trim().toLowerCase() : '';
+    const ownerEmail = typeof payload?.ownerEmail === 'string' ? payload.ownerEmail.trim().toLowerCase() : '';
+    const ownerPassword = typeof payload?.ownerPassword === 'string' ? payload.ownerPassword : '';
     if (!name) {
       throw new BadRequestException('name is required');
     }
     if (!SLUG_PATTERN.test(slug)) {
       throw new BadRequestException('slug may only contain lowercase letters, numbers and single hyphens');
     }
+    if (!ownerEmail.includes('@')) {
+      throw new BadRequestException('A valid owner email is required');
+    }
+    if (ownerPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new BadRequestException(`Owner password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    }
 
     const existing = await this.db.query.stores.findFirst({ where: eq(stores.slug, slug), columns: { id: true } });
     if (existing) {
       throw new ConflictException(`Store slug '${slug}' is already taken`);
     }
+    const existingUser = await this.db.query.users.findFirst({ where: eq(users.email, ownerEmail), columns: { id: true } });
+    if (existingUser) {
+      throw new ConflictException(`A user with email ${ownerEmail} already exists`);
+    }
 
-    const suffix = `${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;
+    const suffix = randomBytes(8).toString('hex');
     const tenantId = `tenant_${suffix}`;
     const storeId = `store_${suffix}`;
+    const passwordHash = await hashPassword(ownerPassword);
 
     await this.db.transaction(async (tx) => {
       await tx.insert(tenants).values({
@@ -101,6 +115,13 @@ export class PlatformService {
         name: `${name} Main Store`,
         slug,
         currency: 'PKR',
+      });
+      await tx.insert(users).values({
+        id: `user_${randomBytes(12).toString('hex')}`,
+        email: ownerEmail,
+        passwordHash,
+        role: 'merchant',
+        tenantId,
       });
     });
 

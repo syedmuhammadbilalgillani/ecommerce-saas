@@ -1,5 +1,7 @@
 import Link from 'next/link';
-import { getAnalytics, getOrders, formatPrice } from '@/lib/api';
+import { redirect } from 'next/navigation';
+import { AuthError, getAnalytics, getOrders, formatPrice } from '@/lib/api';
+import { serverAuthHeaders } from '@/lib/server-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -7,10 +9,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 export const revalidate = 0; // Fresh metrics
 
 export default async function MerchantDashboardPage() {
-  const [analytics, orders] = await Promise.all([
-    getAnalytics(),
-    getOrders(),
-  ]);
+  const auth = await serverAuthHeaders();
+  let analytics, orders;
+  try {
+    [analytics, orders] = await Promise.all([getAnalytics(auth), getOrders(auth)]);
+  } catch (err) {
+    if (err instanceof AuthError) redirect('/login');
+    throw err;
+  }
 
   const orderList = orders;
   const recentOrders = orderList.slice(0, 5);

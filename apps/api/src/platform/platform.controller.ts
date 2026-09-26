@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Patch, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards } from '@nestjs/common';
+import { PlatformGuard } from '../auth/guards';
 import { PlatformService } from './platform.service';
 
 @Controller('v1/platform')
+@UseGuards(PlatformGuard)
 export class PlatformController {
   constructor(private readonly platformService: PlatformService) {}
 
@@ -24,7 +26,7 @@ export class PlatformController {
   }
 
   @Post('tenants')
-  async createTenant(@Body() body: { name: string; slug: string }) {
+  async createTenant(@Body() body: { name: string; slug: string; ownerEmail: string; ownerPassword: string }) {
     const data = await this.platformService.createTenant(body);
     return {
       success: true,

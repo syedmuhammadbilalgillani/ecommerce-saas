@@ -26,10 +26,11 @@ export class CustomersService {
     return phone.replace(/[^\d+]/g, '');
   }
 
-  async getCustomers(storeId: string = 'store_default') {
+  async getCustomers(storeId: string) {
     const list = await this.db
       .select()
       .from(customers)
+      .where(eq(customers.storeId, storeId))
       .orderBy(sql`${customers.totalSpentMinor} DESC`);
 
     return list.map((c) => ({
@@ -39,11 +40,11 @@ export class CustomersService {
     }));
   }
 
-  async getCustomerById(id: string) {
+  async getCustomerById(storeId: string, id: string) {
     const customerList = await this.db
       .select()
       .from(customers)
-      .where(eq(customers.id, id))
+      .where(and(eq(customers.id, id), eq(customers.storeId, storeId)))
       .limit(1);
 
     if (!customerList || customerList.length === 0) {
@@ -56,7 +57,7 @@ export class CustomersService {
     const customerOrders = await this.db
       .select()
       .from(orders)
-      .where(eq(orders.customerPhone, customer.phone))
+      .where(and(eq(orders.storeId, storeId), eq(orders.customerPhone, customer.phone)))
       .orderBy(sql`${orders.createdAt} DESC`);
 
     return {
@@ -74,8 +75,8 @@ export class CustomersService {
    */
   async syncCustomerFromOrder(
     dto: CustomerSyncDto,
-    storeId: string = 'store_default',
-    tenantId: string = 'ten_pilot_01'
+    storeId: string,
+    tenantId: string
   ): Promise<string> {
     const cleanPhone = this.normalizePhone(dto.phone);
     if (!cleanPhone) return '';
