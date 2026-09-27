@@ -10,9 +10,7 @@ import {
   type MerchantProductVariant,
 } from '@/lib/api';
 import { slugify } from '@/lib/slug';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, Input, Label } from '@repo/ui';
 import { ErrorBanner } from '@/components/error-banner';
 
 /** Rupees typed by the merchant -> integer minor units (paisa). */

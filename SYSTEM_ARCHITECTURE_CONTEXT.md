@@ -91,12 +91,15 @@ ecommerce-saas/
 │   │   ├── src/index.ts        # Drizzle schema + relations + client factory (what the code expects)
 │   │   ├── migrations/         # 0001_baseline, 0002_taxonomy_categories, 0003_orders_province_not_null, 0004_plans_audit_logs_roles
 │   │   └── src/                # migrate, check-schema, seed-demo, create-user, reset-password, reset, password
-│   ├── typescript-config/  eslint-config/  ui/
+│   ├── ui/                     # Shared Radix-based shadcn component library (@repo/ui) with Tailwind v4 support
+│   │                           #   (Button, Card, Input, Label, Badge, Table, Dialog, Tabs, DropdownMenu, Select,
+│   │                           #   Separator, Switch, Avatar, Tooltip, Textarea, Skeleton, Alert)
+│   ├── typescript-config/  eslint-config/
 ├── README.md                   # setup, commands, tests, production notes
 └── SYSTEM_ARCHITECTURE_CONTEXT.md  # THIS FILE (living architecture state)
 ```
 
-`apps/docs` and `packages/ui` are unused Turborepo starter leftovers.
+`apps/docs` is an unused Turborepo starter leftover. `@repo/ui` is the central component kit used across admin apps.
 
 ---
 
@@ -318,6 +321,7 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 - [x] **Monitoring & Audit Logs:** Fastify `onResponse` hook for live p95 API response time, `audit_logs` table recording all sensitive admin actions, and UI page (`/audit-logs`) with action filters.
 - [x] **Platform Roles & RBAC:** `PlatformRoleGuard` enforcing role boundaries (`super_admin` full access, `support` access without destructive/billing rights, `viewer` read-only).
 - [x] **AI Storefront Studio & Master Prompt Generator:** Dedicated merchant portal tool (`/storefront-ai`) that generates a business-tailored, production-ready AI design prompt (for Claude, ChatGPT, Cursor, v0) containing complete page specifications, 13 API endpoints, integer money rules, and Pakistani COD conversion optimizations.
+- [x] **Shared Shadcn Component Library (@repo/ui) & Tailwind CSS v4 Upgrade:** Upgraded monorepo to Tailwind CSS v4 with CSS-first configuration and `@source` directives. Converted `packages/ui` into a full Radix-powered shadcn kit with 17 components (`Button`, `Card`, `Input`, `Label`, `Badge`, `Table`, `Dialog`, `Tabs`, `DropdownMenu`, `Select`, `Separator`, `Switch`, `Avatar`, `Tooltip`, `Textarea`, `Skeleton`, `Alert`) directly imported across `merchant-admin` and `platform-admin`.
 - [x] **Automated E2E test coverage:** Expanded from 16 to 20 comprehensive end-to-end checks validating all newly added capabilities.
 
 ### Next — Step 6: Launch

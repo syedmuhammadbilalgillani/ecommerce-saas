@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DRIZZLE } from '../db/db.module';
-import { type Database, auditLogs, desc, eq, and } from '@repo/db';
+import { type Database, auditLogs, desc, eq, and, type SQL } from '@repo/db';
 import { randomBytes } from 'node:crypto';
 
 export interface CreateAuditLogDto {
@@ -36,7 +36,7 @@ export class AuditLogService {
 
   async list(options?: { limit?: number; action?: string; targetType?: string }) {
     const limit = Math.min(options?.limit ?? 50, 100);
-    const conditions = [];
+    const conditions: SQL[] = [];
     if (options?.action) conditions.push(eq(auditLogs.action, options.action));
     if (options?.targetType) conditions.push(eq(auditLogs.targetType, options.targetType));
 

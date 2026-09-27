@@ -3,12 +3,20 @@
 import React, { useState, useEffect } from 'react';
 import { getDiscounts, createDiscount, setDiscountActive, formatPrice, errorMessage, type MerchantDiscount } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Card,
+  CardContent,
+  Button,
+  Input,
+  Label,
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@repo/ui';
 
 export default function MerchantDiscountsPage() {
   const [discounts, setDiscounts] = useState<MerchantDiscount[]>([]);

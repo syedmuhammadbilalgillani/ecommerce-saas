@@ -2,10 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { getStoreSettings, type StoreSettings } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button, Input, Label } from '@repo/ui';
 
 const NICHE_PRESETS = [
   { id: 'apparel_eastern', label: 'Eastern & Traditional Wear (Kurti, Shalwar Kameez, Unstitched)' },

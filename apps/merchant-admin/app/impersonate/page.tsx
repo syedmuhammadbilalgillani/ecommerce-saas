@@ -3,8 +3,7 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, Button } from '@repo/ui';
 import { errorMessage } from '@/lib/api';
 
 function ImpersonateContent() {

@@ -2,10 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { getAuditLogs, errorMessage, type AuditLog } from '@/lib/api';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card, Badge, Button, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@repo/ui';
 
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);

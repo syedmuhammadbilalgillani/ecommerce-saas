@@ -3,10 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { login, errorMessage } from '@/lib/api';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card, Button, Input, Label } from '@repo/ui';
 
 export default function PlatformLoginPage() {
   const router = useRouter();

@@ -17,10 +17,21 @@ import {
 import { ErrorBanner } from '@/components/error-banner';
 import { PackingLabel } from '@/components/packing-label';
 import { FULFILLMENT_LABEL, isMajorMetro, isPakistaniMobile } from '@/lib/order-checks';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Button,
+  Badge,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@repo/ui';
 
 export default function OrderDetailPage() {
   const params = useParams();

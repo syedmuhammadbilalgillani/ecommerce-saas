@@ -10,12 +10,22 @@ import {
   type CustomerPage,
   type MerchantCustomer,
 } from '@/lib/api';
-import { Button } from '@/components/ui/button';
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@repo/ui';
 import { ErrorBanner } from '@/components/error-banner';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 export default function MerchantCustomersPage() {
   const [customers, setCustomers] = useState<MerchantCustomer[]>([]);

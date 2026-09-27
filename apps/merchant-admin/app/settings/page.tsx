@@ -2,10 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { changePassword, errorMessage, getStoreSettings, updateStoreSettings, type StoreSettings } from '@/lib/api';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card, Button, Input, Label } from '@repo/ui';
 import { ErrorBanner } from '@/components/error-banner';
 
 function SuccessNote({ message }: { message: string | null }) {

@@ -2,9 +2,19 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { AuthError, getAnalytics, getOrders, formatPrice } from '@/lib/api';
 import { serverAuthHeaders } from '@/lib/server-auth';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@repo/ui';
 
 export const revalidate = 0; // Fresh metrics
 

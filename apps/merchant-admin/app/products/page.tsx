@@ -12,15 +12,22 @@ import {
   type TaxonomyCategory,
   type StoreCollection,
 } from '@/lib/api';
-import { Card } from '@/components/ui/card';
+import {
+  Card,
+  Button,
+  Input,
+  Label,
+  Badge,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@repo/ui';
 import { ErrorBanner } from '@/components/error-banner';
 import { ProductEditor } from '@/components/product-editor';
 import { slugify } from '@/lib/slug';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3000';
 

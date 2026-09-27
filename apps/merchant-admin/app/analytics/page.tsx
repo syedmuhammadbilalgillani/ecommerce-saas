@@ -12,13 +12,25 @@ import {
 } from 'recharts';
 import { getAnalytics, formatPrice, errorMessage, type MerchantAnalytics } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardFooter,
+  Badge,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Progress,
+  Separator,
+  Skeleton,
+} from '@repo/ui';
 import {
   ChartContainer,
   ChartTooltip,

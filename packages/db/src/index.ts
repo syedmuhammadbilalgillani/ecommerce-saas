@@ -563,6 +563,7 @@ export const schema = {
   discounts,
   users,
   sessions,
+  auditLogs,
   tenantsRelations,
   usersRelations,
   sessionsRelations,
