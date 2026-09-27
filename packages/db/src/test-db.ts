@@ -1,5 +1,5 @@
+import './load-env';
 import postgres from 'postgres';
-import 'dotenv/config';
 
 async function testConnection() {
   const url = process.env.DATABASE_URL;

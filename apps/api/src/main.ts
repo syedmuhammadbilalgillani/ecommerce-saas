@@ -1,4 +1,15 @@
 import * as dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Load single root .env (from monorepo root)
+const rootEnvPath = resolve(__dirname, '../../../.env');
+const cwdRootEnvPath = resolve(process.cwd(), '../../.env');
+if (existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath });
+} else if (existsSync(cwdRootEnvPath)) {
+  dotenv.config({ path: cwdRootEnvPath });
+}
 dotenv.config();
 
 import { randomUUID } from 'node:crypto';
@@ -10,9 +21,9 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { TelemetryService } from './common/telemetry.service';
 
 function parseTrustProxy(value: string | undefined): boolean | number | string {
-  if (!value) return false;
+  if (!value || value.toLowerCase() === 'false') return false;
   if (/^\d+$/.test(value)) return Number(value);
-  if (value === 'true') return true;
+  if (value.toLowerCase() === 'true') return true;
   return value; // comma-separated list of trusted proxy IPs/CIDRs
 }
 
@@ -49,7 +60,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   // Cookies carry the admin sessions, so CORS must name the allowed origins explicitly.
-  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:3002')
+  const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:8000')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);

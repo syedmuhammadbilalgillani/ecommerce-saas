@@ -8,7 +8,7 @@
  * leaves the database exactly as it was before that file. A Postgres advisory lock stops two
  * deploys from migrating at the same time. Applied files must never be edited — add a new file.
  */
-import 'dotenv/config';
+import './load-env';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

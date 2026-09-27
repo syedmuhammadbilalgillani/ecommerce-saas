@@ -5,7 +5,7 @@
  *
  * The password is read from a hidden prompt (or POSFLOW_PASSWORD for scripting).
  */
-import 'dotenv/config';
+import './load-env';
 import { createInterface } from 'node:readline';
 import { createDbClient, users, sessions, eq, hashPassword, MIN_PASSWORD_LENGTH } from './index.ts';
 

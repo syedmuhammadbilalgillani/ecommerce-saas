@@ -4,7 +4,7 @@
 > **Target Audience:** Mid-market D2C brands (50–500 orders/day) and scaling merchants in Pakistan & MENA.
 > **Engineering Motto:** *"One unified, lightning-fast commerce engine powering infinitely custom storefronts."*
 
-**Last updated:** 2026-09-27 · **Status:** feature-complete for a pilot merchant + multi-tenant fleet management (Hardening Step 4 complete); not yet deployed (see §10).
+**Last updated:** 2026-09-27 · **Status:** feature-complete for a pilot merchant + multi-tenant fleet management (Hardening Step 6 complete: unified root env, cross-platform deployment runners, Tailwind v4 + @repo/ui, Lucide icons); ready for deployment (see §10).
 
 ---
 
@@ -59,18 +59,18 @@ ecommerce-saas/
 │   ├── merchant-admin/         # Merchant Admin (Port 3001)
 │   │   ├── app/                # login, impersonate, dashboard, orders (+ detail), products, collections, customers,
 │   │   │                       #   discounts, analytics, settings, storefront-ai (AI Prompt Studio), error.tsx
-│   │   ├── components/         # app-shell (sidebar, store switcher, support mode banner, sign-out), product-editor, packing-label, error-banner, ui/
+│   │   ├── components/         # app-shell (sidebar, store switcher, support mode banner, sign-out), product-editor, packing-label, error-banner
 │   │   ├── lib/                # api.ts (client + multi-store scoping), server-auth.ts, order-checks.ts, slug.ts
 │   │   ├── proxy.ts            # redirects to /login when there is no session cookie
-│   │   └── next.config.mjs     # /api/* rewrite -> API_URL (same-origin cookies)
+│   │   └── next.config.mjs     # /api/* rewrite -> API_URL; native zero-dependency root .env loader
 │   ├── platform-admin/         # Platform (Super) Admin (Port 3002)
 │   │   ├── app/                # login, metrics (dashboard + real ARR + p95 latency), tenants list & provision (with tier),
 │   │   │                       #   tenants/[id] (edit tenant/store/slug/plan, stores fleet, staff users, suspend/activate),
 │   │   │                       #   admins (team management & RBAC roles), audit-logs (security trail), account
-│   │   ├── components/         # app-shell, reset-password-dialog, ui/
+│   │   ├── components/         # app-shell, reset-password-dialog
 │   │   ├── lib/                # api.ts (client), server-auth.ts
 │   │   ├── proxy.ts            # redirects to /login when there is no platform session cookie
-│   │   └── next.config.mjs     # /api/* rewrite -> API_URL (same-origin cookies)
+│   │   └── next.config.mjs     # /api/* rewrite -> API_URL; native zero-dependency root .env loader
 │   └── api/                    # NestJS + Fastify (Port 4000)
 │       ├── src/
 │       │   ├── auth/           # AuthService, guards (Merchant/Platform/PlatformRole/StorefrontStore), session-token
@@ -84,22 +84,33 @@ ecommerce-saas/
 │       │   ├── store/          # store settings (name, WhatsApp)
 │       │   ├── platform/       # tenants, platform metrics (real ARR), admin management, audit-log.service, impersonation
 │       │   └── db/             # Drizzle provider, resolveTenantId, DbExecutor type
-│       ├── test/               # unit.test.ts, e2e.test.ts
-│       └── .env.example
+│       └── test/               # unit.test.ts, e2e.test.ts
 ├── packages/
 │   ├── db/
 │   │   ├── src/index.ts        # Drizzle schema + relations + client factory (what the code expects)
 │   │   ├── migrations/         # 0001_baseline, 0002_taxonomy_categories, 0003_orders_province_not_null, 0004_plans_audit_logs_roles
-│   │   └── src/                # migrate, check-schema, seed-demo, create-user, reset-password, reset, password
+│   │   └── src/                # load-env.ts (central root .env loader), migrate, check-schema, seed-demo, create-user, reset-password, reset, password
 │   ├── ui/                     # Shared Radix-based shadcn component library (@repo/ui) with Tailwind v4 support
 │   │                           #   (Button, Card, Input, Label, Badge, Table, Dialog, Tabs, DropdownMenu, Select,
 │   │                           #   Separator, Switch, Avatar, Tooltip, Textarea, Skeleton, Alert)
 │   ├── typescript-config/  eslint-config/
+├── scripts/                    # Dedicated cross-platform deployment and build runners (.sh for Linux/macOS, .bat for Windows)
+│   ├── build.sh / build.bat    # Unified build runner (all, merchant, platform, api, web)
+│   ├── build-api.sh / .bat     # Individual app build runners
+│   ├── build-merchant-admin.sh / .bat
+│   ├── build-platform-admin.sh / .bat
+│   ├── build-storefront.sh / .bat
+│   ├── start-api.sh / .bat     # Production start API (Port 4000)
+│   ├── start-merchant-admin.sh / .bat # Production start Merchant Admin (Port 3001)
+│   ├── start-platform-admin.sh / .bat # Production start Platform Admin (Port 3002)
+│   └── start-storefront.sh / .bat     # Production start Storefront (Port 3000)
+├── .env                        # Single central root environment file (local or Neon cloud active)
+├── .env.example                # Single central root environment template with documentation
 ├── README.md                   # setup, commands, tests, production notes
 └── SYSTEM_ARCHITECTURE_CONTEXT.md  # THIS FILE (living architecture state)
 ```
 
-`apps/docs` is an unused Turborepo starter leftover. `@repo/ui` is the central component kit used across admin apps.
+`apps/docs` is an unused Turborepo starter leftover. `@repo/ui` is the central component kit directly imported by both admin apps with Tailwind CSS v4 styling.
 
 ---
 
@@ -246,24 +257,50 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
   * `pnpm --filter api test` — unit (phone normalization, discount math, pagination), no DB.
   * `E2E_ALLOW_WRITES=true pnpm --filter api test:e2e` — builds and boots the API on a spare port, runs 20 end-to-end checks (auth, tenant isolation, platform tenant edit & slug collision check, staff lifecycle & session revocation, 8-buyer last-unit race, coupon race, unique order numbers, customer upsert, double submit, order tokens, restock-once, pagination, analytics, stock adjust, WhatsApp validation, password change, multi-store fleet & cross-tenant isolation, billing plans & real ARR recalculation, audit logs recording & action filtering, platform RBAC permissions & role guard enforcement), then deletes everything it created. **Writes to `DATABASE_URL`** — use a Neon branch.
 
-### Environment variables
+### Environment Configuration (Single Root .env)
+
+The monorepo uses a single, centralized `.env` file located at the repository root (`ecommerce-saas/.env`). Redundant app-level `.env` files are deprecated. A template is maintained at `.env.example`.
+
+* **Backend API (`apps/api`):** `main.ts` resolves and loads the root `.env` across working directories.
+* **Database Scripts (`packages/db`):** `packages/db/src/load-env.ts` loads root `.env` for all Drizzle scripts (`db:migrate`, `db:seed`, `db:test`, etc.).
+* **Frontend Apps (`apps/web`, `apps/merchant-admin`, `apps/platform-admin`):** `next.config` uses a zero-dependency native loader (`node:fs` + `process.loadEnvFile()`) to populate `process.env` and inlines `NEXT_PUBLIC_*` variables for Turbopack and client components.
+* **Dual Database Engine:** Directly supports both Neon Cloud PostgreSQL (`sslmode=require`) and Local PostgreSQL (`postgresql://...:5432/...`) by toggling `DATABASE_URL` in root `.env`.
+
 | Variable | App | Default | Purpose |
 | :--- | :--- | :--- | :--- |
-| `DATABASE_URL` | api, db | — | Postgres connection (Neon: `sslmode=require`) |
-| `PORT` | api | `4000` | |
+| `DATABASE_URL` | api, db | — | Postgres connection (Neon with `sslmode=require`, or Local) |
+| `PORT` | api | `4000` | Port for NestJS/Fastify API server |
 | `NODE_ENV` | all | `development` | `production` = secure cookies, rate limits forced on, seed/reset refused |
-| `CORS_ORIGINS` | api | `http://localhost:3000,3001,3002` | Browser origins allowed (with credentials) |
-| `DEFAULT_STORE_ID` | api | `store_default` | Storefront store when no `x-store-id` |
-| `TRUST_PROXY` | api | (off) | Proxy hop count for real client IPs |
-| `RATE_LIMIT_PER_MINUTE` | api | `300` | Global per-IP limit |
-| `RATE_LIMIT_DISABLED` | api | — | Test suite only; ignored in production |
-| `LOG_LEVEL` | api | `info` | pino level |
-| `COOKIE_DOMAIN` | api | (host-only) | Optional; normally unset |
+| `LOG_LEVEL` | api | `info` | Pino structured logger level (`info`, `debug`, `warn`, `error`) |
+| `CORS_ORIGINS` | api | `http://localhost:3000,3001,3002,8000` | Allowed browser origins for cookie-based credentials |
+| `DEFAULT_STORE_ID` | api | `store_default` | Fallback storefront store when no `x-store-id` header |
+| `TRUST_PROXY` | api | `false` | Reverse proxy hop count (e.g. `1` or `false`). Parser safely accepts boolean/number |
+| `RATE_LIMIT_PER_MINUTE` | api | `300` | Global per-IP request rate limit |
+| `RATE_LIMIT_DISABLED` | api | `false` | Local test suite only; ignored in production |
+| `COOKIE_DOMAIN` | api | (host-only) | Optional domain attribute for cookies |
 | `API_URL` | merchant-admin, platform-admin | `http://127.0.0.1:4000` | Target of the `/api/*` rewrite and server-side calls |
-| `NEXT_PUBLIC_API_URL` | web | `http://127.0.0.1:4000` | Storefront calls the API directly |
-| `NEXT_PUBLIC_STORE_ID` | web | `store_default` | Store this storefront sells for |
-| `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | "View storefront" links |
-| `NEXT_PUBLIC_MERCHANT_ADMIN_URL` | platform-admin | `http://localhost:3001` | "Merchant portal" links |
+| `NEXT_PUBLIC_API_URL` | web, admins | `http://127.0.0.1:4000` | Storefront and client-side API endpoint |
+| `NEXT_PUBLIC_STORE_ID` | web | `store_default` | Store identifier used by storefront |
+| `NEXT_PUBLIC_STOREFRONT_URL` | admins | `http://localhost:3000` | Storefront URL for previews and outbound links |
+| `NEXT_PUBLIC_MERCHANT_ADMIN_URL` | platform-admin | `http://localhost:3001` | Merchant dashboard URL for impersonation and portal links |
+| `NEXT_PUBLIC_PLATFORM_ADMIN_URL` | admins | `http://localhost:3002` | Platform (Super Admin) dashboard URL |
+
+### Production & Deployment Scripts (`scripts/`)
+
+All deployment and build runners are centralized in `scripts/`:
+
+* **Bash (Linux, macOS, Docker):**
+  * `bash scripts/build.sh [all|merchant|platform|api|web]`
+  * `bash scripts/start-api.sh` (Port 4000)
+  * `bash scripts/start-merchant-admin.sh` (Port 3001)
+  * `bash scripts/start-platform-admin.sh` (Port 3002)
+  * `bash scripts/start-storefront.sh` (Port 3000)
+* **Windows (Batch / CMD / Explorer):**
+  * `.\scripts\build.bat [all|merchant|platform|api|web]`
+  * `.\scripts\start-api.bat`, `.\scripts\start-merchant-admin.bat`, `.\scripts\start-platform-admin.bat`, `.\scripts\start-storefront.bat`
+* **Cross-Platform PNPM Lifecycles:**
+  * `pnpm build`, `pnpm build:api`, `pnpm build:merchant`, `pnpm build:platform`, `pnpm build:storefront`
+  * `pnpm start:api`, `pnpm start:merchant`, `pnpm start:platform`, `pnpm start:storefront`
 
 ---
 
@@ -324,7 +361,16 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 - [x] **Shared Shadcn Component Library (@repo/ui) & Tailwind CSS v4 Upgrade:** Upgraded monorepo to Tailwind CSS v4 with CSS-first configuration and `@source` directives. Converted `packages/ui` into a full Radix-powered shadcn kit with 17 components (`Button`, `Card`, `Input`, `Label`, `Badge`, `Table`, `Dialog`, `Tabs`, `DropdownMenu`, `Select`, `Separator`, `Switch`, `Avatar`, `Tooltip`, `Textarea`, `Skeleton`, `Alert`) directly imported across `merchant-admin` and `platform-admin`.
 - [x] **Automated E2E test coverage:** Expanded from 16 to 20 comprehensive end-to-end checks validating all newly added capabilities.
 
-### Next — Step 6: Launch
+### Hardening Step 6 — Unified Environment, Production Scripts, Lucide Migration & Full Architecture Polish
+- [x] **Single Central Root Environment (`.env` & `.env.example`):** Consolidated all fragmented `.env` files into a single master configuration at the monorepo root. Frontend apps load it via built-in zero-dependency `node:fs`/`process.loadEnvFile` in `next.config`, DB scripts via `load-env.ts`, and API via `main.ts`. Redundant app-level `.env` files safely deprecated.
+- [x] **Dual PostgreSQL Compatibility:** Direct support for both Neon Serverless Cloud (`sslmode=require`) and Local PostgreSQL instances with zero code changes.
+- [x] **Production Deployment & Build Scripts (`scripts/`):** Created a unified `scripts/` directory containing dedicated production startup and build runners for both Linux/macOS/Docker (`.sh`) and Windows (`.bat`) plus cross-platform `pnpm` lifecycle scripts (`pnpm start:api`, `pnpm start:merchant`, `pnpm start:platform`, `pnpm start:storefront`, `pnpm build:*`). All scripts feature auto-monorepo detection, production safety guards, and automatic build checks.
+- [x] **Fastify Trust Proxy Hardening:** Patched `parseTrustProxy` in `apps/api/src/main.ts` to properly handle string `"false"` and return boolean `false`, eliminating `TypeError: invalid IP address: false`.
+- [x] **ESM Package Modernization:** Added `"type": "module"` to `packages/db/package.json` to eliminate Node.js 24 typeless package overhead warnings.
+- [x] **Complete Lucide Icon Migration:** Replaced all raw unicode emojis across all storefront and admin UIs with standard Lucide React icons.
+- [x] **Full `@repo/ui` Adoption:** Removed all local `ui/` duplicates in `apps/merchant-admin` and `apps/platform-admin`, standardizing on direct `@repo/ui` imports backed by Tailwind CSS v4.
+
+### Next — Step 7: Launch
 - [ ] Production database (separate Neon project/branch) + `db:migrate`; point-in-time restore enabled and a restore tested.
 - [ ] Hosting for API and the three Next apps; domains + HTTPS; production env vars (§9).
 - [ ] Push the repository to a private remote (currently local only).
@@ -335,7 +381,7 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 - [ ] Product images; collection editing / assigning products after creation.
 - [ ] Rate limits and lockouts in Redis for multi-instance; error tracking (e.g. Sentry); ESLint configs for the admin apps.
 - [ ] Email-based "forgot password" (needs an email provider).
-- [ ] Remove unused `apps/docs` and `packages/ui`.
+- [ ] Remove unused `apps/docs`.
 
 ---
 

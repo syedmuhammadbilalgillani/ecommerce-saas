@@ -516,7 +516,7 @@ Headers:
 Provide clean, modular code. Here is the recommended API client foundation:
 
 \`\`\`typescript
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 export const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID || '${activeStoreId}';
 
 export function storefrontHeaders(extra: Record<string, string> = {}): Record<string, string> {

@@ -7,7 +7,7 @@
  * The Drizzle schema (what the API code expects) and the SQL migrations (what the database
  * actually has) are maintained by hand, so this catches the two drifting apart.
  */
-import 'dotenv/config';
+import './load-env';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';

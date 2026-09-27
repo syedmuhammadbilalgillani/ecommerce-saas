@@ -6,7 +6,7 @@
  *
  * Idempotent: rows that already exist are left untouched.
  */
-import 'dotenv/config';
+import './load-env';
 import postgres from 'postgres';
 
 const TENANT = 'ten_pilot_01';

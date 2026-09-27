@@ -1,4 +1,14 @@
 import { defineConfig } from 'drizzle-kit';
+import dotenv from 'dotenv';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Load single root .env
+const rootEnv = resolve(__dirname, '../../.env');
+if (existsSync(rootEnv)) {
+  dotenv.config({ path: rootEnv });
+}
+dotenv.config();
 
 export default defineConfig({
   schema: './src/index.ts',
@@ -6,6 +16,6 @@ export default defineConfig({
   out: './drizzle-kit-out',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/ecommerce_saas',
+    url: process.env.DATABASE_URL || '',
   },
 });

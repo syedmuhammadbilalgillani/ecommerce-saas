@@ -7,7 +7,7 @@
  * The password is read from a hidden prompt (or the POSFLOW_PASSWORD env var for scripting),
  * so it never lands in shell history.
  */
-import 'dotenv/config';
+import './load-env';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { createDbClient, users, tenants, eq, hashPassword, MIN_PASSWORD_LENGTH } from './index.ts';

@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 /** Which store this storefront deployment sells for. The API rejects unknown or suspended stores. */
 export const STORE_ID = process.env.NEXT_PUBLIC_STORE_ID || 'store_default';

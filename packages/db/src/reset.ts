@@ -1,5 +1,5 @@
+import './load-env';
 import postgres from 'postgres';
-import 'dotenv/config';
 
 async function reset() {
   const url = process.env.DATABASE_URL;
