@@ -1,19 +1,34 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Check, ShoppingCart, Zap, Lock } from 'lucide-react';
 import { type ProductVariant, formatPrice } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 
 export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
   const [selectedId, setSelectedId] = useState(variants[0]?.id || '');
-  const { addItem, isLoading, error } = useCart();
+  const [isBuyingNow, setIsBuyingNow] = useState(false);
+  const { addItem, closeCart, isLoading, error } = useCart();
+  const router = useRouter();
 
   const activeVariant = variants.find((v) => v.id === selectedId) || variants[0];
 
   const handleAddToCart = async () => {
     if (!activeVariant) return;
     await addItem(activeVariant.id, 1);
+  };
+
+  const handleBuyNow = async () => {
+    if (!activeVariant) return;
+    setIsBuyingNow(true);
+    const ok = await addItem(activeVariant.id, 1);
+    if (ok) {
+      closeCart();
+      router.push('/checkout');
+    } else {
+      setIsBuyingNow(false);
+    }
   };
 
   if (!activeVariant) return null;
@@ -81,7 +96,7 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <button
           onClick={handleAddToCart}
-          disabled={isLoading || !inStock}
+          disabled={isLoading || isBuyingNow || !inStock}
           className="btn"
           style={{
             padding: '1rem',
@@ -96,12 +111,12 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
           }}
         >
           <ShoppingCart size={18} />
-          <span>{!inStock ? 'Sold Out' : isLoading ? 'Adding to Cart...' : 'Add to Cart'}</span>
+          <span>{!inStock ? 'Sold Out' : isLoading && !isBuyingNow ? 'Adding to Cart...' : 'Add to Cart'}</span>
         </button>
 
         <button
-          onClick={handleAddToCart}
-          disabled={isLoading || !inStock}
+          onClick={handleBuyNow}
+          disabled={isLoading || isBuyingNow || !inStock}
           className="btn btn-secondary"
           style={{
             padding: '0.85rem',
@@ -116,7 +131,7 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
           }}
         >
           <Zap size={16} />
-          <span>Buy with Cash on Delivery (COD)</span>
+          <span>{isBuyingNow ? 'Redirecting to Checkout...' : 'Buy with Cash on Delivery (COD)'}</span>
         </button>
 
         {error && (

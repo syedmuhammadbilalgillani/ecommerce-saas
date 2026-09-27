@@ -148,7 +148,7 @@ export default function StorefrontAiPage() {
 
   // Master Prompt Generator
   const masterPrompt = useMemo(() => {
-    return `# 🛍️ Complete E-Commerce Storefront Specification & Design Blueprint
+    const raw = `# 🛍️ Complete E-Commerce Storefront Specification & Design Blueprint
 
 You are an expert Senior Full-Stack E-Commerce Architect and Award-Winning UI/UX Designer.
 Your task is to build a complete, production-ready, high-converting E-Commerce storefront for **${storeName || 'My Brand'}**.
@@ -546,6 +546,8 @@ export function formatPKR(minorAmount: number): string {
 3. **Responsive Execution:** Ensure mobile experience is lightning fast with sticky buy buttons and thumb-friendly checkout fields.
 4. Output complete, working components with full TypeScript types.
 `;
+    // Plain text output — no markdown bold markers.
+    return raw.replace(/\*\*/g, '');
   }, [
     storeName,
     storeTagline,
