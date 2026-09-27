@@ -105,8 +105,8 @@ export class PlatformRoleGuard implements CanActivate {
     const user = req.platformUser;
     if (!user) return false;
 
-    const userRole = user.platformRole || 'super_admin';
-    if (!requiredRoles.includes(userRole)) {
+    const userRole = user.platformRole;
+    if (!userRole || !requiredRoles.includes(userRole)) {
       throw new ForbiddenException(`Action requires ${requiredRoles.join(' or ')} role (current: ${userRole})`);
     }
     return true;

@@ -66,6 +66,24 @@ const ChartContainer = React.forwardRef<
 });
 ChartContainer.displayName = 'Chart';
 
+// Only accept characters that can legitimately appear in a CSS custom-property
+// value (hex/rgb/hsl/var() color syntax) or identifier, so config coming from
+// tenant-controlled data (e.g. a store's brand colors) can never break out of
+// the generated <style> block.
+const SAFE_CSS_VALUE = /^[#a-zA-Z0-9\s.,%()\-]+$/;
+const SAFE_IDENTIFIER = /^[a-zA-Z0-9_-]+$/;
+
+function sanitizeCssValue(value: string | undefined): string | null {
+  if (!value || !SAFE_CSS_VALUE.test(value)) {
+    return null;
+  }
+  return value;
+}
+
+function sanitizeIdentifier(value: string): string {
+  return SAFE_IDENTIFIER.test(value) ? value : value.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme || config.color
@@ -75,19 +93,23 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
+  const safeId = sanitizeIdentifier(id);
+
   return (
     <style
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart=${safeId}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    const rawColor =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    const safeKey = sanitizeIdentifier(key);
+    const safeColor = sanitizeCssValue(rawColor);
+    return safeColor ? `  --color-${safeKey}: ${safeColor};` : null;
   })
   .filter(Boolean)
   .join('\n')}

@@ -432,7 +432,7 @@ export class OrdersService {
       }
       const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId));
 
-      await tx.update(orders).set({ ...patch, updatedAt: new Date() }).where(eq(orders.id, orderId));
+      await tx.update(orders).set({ ...patch, updatedAt: new Date() }).where(and(eq(orders.id, orderId), eq(orders.storeId, storeId)));
 
       // Stock moves only on a real transition, so repeated cancels can't restock twice.
       const wasCancelled = current.orderStatus === 'cancelled';
@@ -457,7 +457,7 @@ export class OrdersService {
 
     await this.db.update(orders)
       .set({ notes: updatedNotes, updatedAt: new Date() })
-      .where(eq(orders.id, orderId));
+      .where(and(eq(orders.id, orderId), eq(orders.storeId, storeId)));
 
     this.logger.log(`Order ${order.orderNumber} marked WhatsApp verified by ${verifiedBy}`);
     return this.getStoreOrder(storeId, orderId);
@@ -467,7 +467,7 @@ export class OrdersService {
     await this.getStoreOrder(storeId, orderId);
     await this.db.update(orders)
       .set({ notes, updatedAt: new Date() })
-      .where(eq(orders.id, orderId));
+      .where(and(eq(orders.id, orderId), eq(orders.storeId, storeId)));
 
     return this.getStoreOrder(storeId, orderId);
   }
@@ -494,7 +494,7 @@ export class OrdersService {
         updatedAt: new Date(),
       })
       // Conditional so two simultaneous clicks can't both book.
-      .where(and(eq(orders.id, orderId), isNull(orders.courierTrackingNumber)));
+      .where(and(eq(orders.id, orderId), eq(orders.storeId, storeId), isNull(orders.courierTrackingNumber)));
 
     return this.getStoreOrder(storeId, orderId);
   }

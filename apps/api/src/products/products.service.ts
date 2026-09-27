@@ -195,7 +195,7 @@ export class ProductsService {
       patch.isPublished = payload.isPublished;
     }
 
-    await this.db.update(products).set(patch).where(eq(products.id, productId));
+    await this.db.update(products).set(patch).where(and(eq(products.id, productId), eq(products.storeId, storeId)));
     return this.getMerchantProduct(storeId, productId);
   }
 
