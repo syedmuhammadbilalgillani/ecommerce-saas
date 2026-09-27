@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { MessageSquare, ArrowRight, X } from 'lucide-react';
 import {
   getCustomers,
   getCustomerById,
@@ -101,7 +102,7 @@ export default function MerchantCustomersPage() {
   const avgLTV = stats?.avgLifetimeValueMinor ?? 0;
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-4">
         <div>
@@ -205,9 +206,9 @@ export default function MerchantCustomersPage() {
                             target="_blank"
                             rel="noopener noreferrer"
                             title="Chat on WhatsApp"
-                            className="text-[11px] hover:text-emerald-500 transition-colors"
+                            className="inline-flex items-center text-[11px] text-emerald-500 hover:text-emerald-400 transition-colors"
                           >
-                            💬
+                            <MessageSquare className="w-3.5 h-3.5" />
                           </a>
                         )}
                       </div>
@@ -241,9 +242,10 @@ export default function MerchantCustomersPage() {
                     <TableCell className="text-right">
                       <button
                         onClick={() => handleSelectCustomer(cust)}
-                        className="text-xs text-muted-foreground hover:text-foreground underline transition-colors cursor-pointer"
+                        className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground underline transition-colors cursor-pointer"
                       >
-                        Profile 360 →
+                        <span>Profile 360</span>
+                        <ArrowRight className="w-3 h-3 ml-1" />
                       </button>
                     </TableCell>
                   </TableRow>
@@ -281,9 +283,10 @@ export default function MerchantCustomersPage() {
                       )}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 hover:bg-emerald-500/20 font-medium"
+                      className="inline-flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 hover:bg-emerald-500/20 font-medium"
                     >
-                      <span>💬</span> WhatsApp Chat
+                      <MessageSquare className="w-3 h-3" />
+                      <span>WhatsApp Chat</span>
                     </a>
                   )}
                 </div>
@@ -291,8 +294,9 @@ export default function MerchantCustomersPage() {
               <button
                 onClick={() => setSelectedCustomer(null)}
                 className="text-muted-foreground hover:text-foreground text-sm cursor-pointer"
+                title="Close"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
 

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Plus, ArrowRight } from 'lucide-react';
 import { AuthError, getAnalytics, getOrders, formatPrice } from '@/lib/api';
 import { serverAuthHeaders } from '@/lib/server-auth';
 import {
@@ -31,7 +32,7 @@ export default async function MerchantDashboardPage() {
   const recentOrders = orders.orders;
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-4">
         <div>
@@ -43,7 +44,8 @@ export default async function MerchantDashboardPage() {
             href="/products"
             className="inline-flex items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-normal text-foreground hover:bg-secondary transition-colors"
           >
-            + Add Product
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            <span>Add Product</span>
           </Link>
           <Link
             href="/orders"
@@ -112,8 +114,9 @@ export default async function MerchantDashboardPage() {
             <h2 className="text-sm font-medium text-foreground">Recent Customer Orders</h2>
             <p className="text-xs text-muted-foreground font-normal">Latest shipments awaiting courier pickup or dispatch.</p>
           </div>
-          <Link href="/orders" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-            View all ({orders.counts.all}) →
+          <Link href="/orders" className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <span>View all ({orders.counts.all})</span>
+            <ArrowRight className="w-3 h-3 ml-1" />
           </Link>
         </div>
 

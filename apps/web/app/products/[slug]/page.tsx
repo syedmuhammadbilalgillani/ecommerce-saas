@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { ShoppingBag, Zap, Banknote } from 'lucide-react';
 import { getProductBySlug } from '../../../lib/api';
 import { VariantSelector } from './variant-selector';
 
@@ -52,10 +53,9 @@ export default async function ProductDetailPage({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '5rem',
           }}
         >
-          🛍️
+          <ShoppingBag size={72} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
         </div>
 
         {/* Product Details & Purchase Island */}
@@ -95,8 +95,20 @@ export default async function ProductDetailPage({
               color: 'var(--text-muted)',
             }}
           >
-            <div>⚡ <strong>Next-Day Delivery</strong><br />Across Karachi, Lahore & Islamabad</div>
-            <div>💵 <strong>Cash on Delivery</strong><br />Pay cash at your doorstep</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text)' }}>
+                <Zap size={14} />
+                <strong>Next-Day Delivery</strong>
+              </div>
+              <div>Across Karachi, Lahore & Islamabad</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--text)' }}>
+                <Banknote size={14} />
+                <strong>Cash on Delivery</strong>
+              </div>
+              <div>Pay cash at your doorstep</div>
+            </div>
           </div>
         </div>
       </div>

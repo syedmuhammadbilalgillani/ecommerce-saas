@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { Download, Copy, Check, Lightbulb } from 'lucide-react';
 import { getStoreSettings, type StoreSettings } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button, Input, Label } from '@repo/ui';
 
@@ -610,9 +611,7 @@ export function formatPKR(minorAmount: number): string {
             className="text-xs gap-1.5"
             title="Download full blueprint as Markdown (.md)"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
+            <Download className="w-3.5 h-3.5" />
             <span>Download .md</span>
           </Button>
 
@@ -627,16 +626,12 @@ export function formatPKR(minorAmount: number): string {
           >
             {copied ? (
               <>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                </svg>
+                <Check className="w-3.5 h-3.5" />
                 <span>Copied to Clipboard!</span>
               </>
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
+                <Copy className="w-3.5 h-3.5" />
                 <span>Copy Master AI Prompt</span>
               </>
             )}
@@ -943,14 +938,12 @@ export function formatPKR(minorAmount: number): string {
                   >
                     {copied ? (
                       <>
-                        <span className="text-emerald-500 font-bold">✓</span>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
                         <span>Copied!</span>
                       </>
                     ) : (
                       <>
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
+                        <Copy className="w-3.5 h-3.5" />
                         <span>Copy Prompt</span>
                       </>
                     )}
@@ -969,7 +962,8 @@ export function formatPKR(minorAmount: number): string {
             {/* AI Assistant Recommender */}
             <div className="rounded-lg border border-border bg-card p-3.5 text-xs text-muted-foreground space-y-2">
               <div className="font-medium text-foreground flex items-center gap-1.5">
-                <span>💡 Where to use this prompt:</span>
+                <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                <span>Where to use this prompt:</span>
               </div>
               <ul className="list-disc list-inside space-y-1 text-[11px]">
                 <li>

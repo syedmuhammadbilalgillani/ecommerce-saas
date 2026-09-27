@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { Plus, X, ExternalLink } from 'lucide-react';
 import {
   getMerchantProducts,
   createMerchantProduct,
@@ -217,7 +218,7 @@ export default function MerchantProductsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-4">
         <div>
@@ -230,7 +231,14 @@ export default function MerchantProductsPage() {
           onClick={() => setIsAddingProduct(!isAddingProduct)}
           className="text-xs font-normal h-8"
         >
-          {isAddingProduct ? 'Close Form' : '+ Add New Product'}
+          {isAddingProduct ? (
+            'Close Form'
+          ) : (
+            <span className="inline-flex items-center">
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Add New Product
+            </span>
+          )}
         </Button>
       </div>
 
@@ -300,9 +308,10 @@ export default function MerchantProductsPage() {
                     variant="outline"
                     size="sm"
                     onClick={addOptionRow}
-                    className="text-[11px] h-7 px-2.5 font-normal"
+                    className="text-[11px] h-7 px-2.5 font-normal gap-1"
                   >
-                    + Add Option
+                    <Plus className="w-3 h-3" />
+                    <span>Add Option</span>
                   </Button>
                 </div>
 
@@ -331,8 +340,9 @@ export default function MerchantProductsPage() {
                         type="button"
                         onClick={() => removeOptionRow(idx)}
                         className="text-muted-foreground hover:text-foreground text-xs px-2 pt-4 cursor-pointer"
+                        title="Remove option"
                       >
-                        ✕
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
@@ -583,9 +593,10 @@ export default function MerchantProductsPage() {
                               href={`${STOREFRONT_URL}/products/${p.slug}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
+                              className="inline-flex items-center text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
                             >
-                              Live ↗
+                              <span>Live</span>
+                              <ExternalLink className="w-3 h-3 ml-1" />
                             </a>
                           ) : (
                             <Badge variant="secondary" className="text-[10px]">Hidden</Badge>

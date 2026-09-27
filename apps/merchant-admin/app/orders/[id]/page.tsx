@@ -4,6 +4,20 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  MessageSquare,
+  Printer,
+  Package,
+  Copy,
+  Banknote,
+  Clock,
+  User,
+  MapPin,
+  ShieldCheck,
+} from 'lucide-react';
+import {
   getOrderById,
   bookCourier,
   updateOrderStatus,
@@ -141,7 +155,8 @@ export default function OrderDetailPage() {
         <p className="text-xs text-muted-foreground">{notFound ? 'The requested order could not be located.' : error}</p>
         <Link href="/orders">
           <Button size="sm" variant="outline" className="text-xs">
-            ← Back to Orders
+            <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+            <span>Back to Orders</span>
           </Button>
         </Link>
       </div>
@@ -154,7 +169,7 @@ export default function OrderDetailPage() {
   const isInTransit = order.status === 'in_transit';
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12">
+    <div className="max-w-full mx-auto space-y-6 pb-12">
       <ErrorBanner message={error} onDismiss={() => setError(null)} />
 
       {/* Top Breadcrumb & Actions Bar */}
@@ -163,9 +178,10 @@ export default function OrderDetailPage() {
           <div className="flex items-center gap-2">
             <Link
               href="/orders"
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              ← Orders
+              <ArrowLeft className="w-3 h-3 mr-1" />
+              <span>Orders</span>
             </Link>
             <span className="text-muted-foreground">/</span>
             <span className="text-xs font-mono text-foreground font-medium">{order.orderNumber}</span>
@@ -208,7 +224,8 @@ export default function OrderDetailPage() {
             {order.paymentMethod === 'cod' && (
               order.whatsappVerified ? (
                 <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-medium">
-                  ✓ WA Verified
+                  <Check className="w-3 h-3" />
+                  <span>WA Verified</span>
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
@@ -242,8 +259,8 @@ export default function OrderDetailPage() {
                   : 'text-foreground hover:border-emerald-500/50'
               }`}
             >
-              <span>💬</span>
-              {order.whatsappVerified ? 'WA Sent' : 'Verify via WA'}
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>{order.whatsappVerified ? 'WA Sent' : 'Verify via WA'}</span>
             </Button>
           )}
 
@@ -254,8 +271,8 @@ export default function OrderDetailPage() {
               onClick={() => setShowThermalLabel(true)}
               className="h-8 text-xs font-normal gap-1.5"
             >
-              <span>🖨️</span>
-              Print Thermal Label (4x6)
+              <Printer className="w-3.5 h-3.5" />
+              <span>Print Thermal Label (4x6)</span>
             </Button>
           ) : (
             <Button
@@ -291,7 +308,7 @@ export default function OrderDetailPage() {
             <CardHeader className="p-5 pb-3 border-b border-border flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
-                  <span>📦</span>
+                  <Package className="w-4 h-4 text-muted-foreground" />
                   <span>Fulfillment & Items</span>
                 </CardTitle>
                 <CardDescription className="text-xs mt-0.5">
@@ -311,7 +328,13 @@ export default function OrderDetailPage() {
                     title="Copy Tracking Number"
                     className="text-xs text-muted-foreground hover:text-foreground cursor-pointer"
                   >
-                    {copiedTracking ? '✓ Copied' : '📋'}
+                    {copiedTracking ? (
+                      <span className="inline-flex items-center text-emerald-500 gap-1 text-[11px]">
+                        <Check className="w-3 h-3" /> Copied
+                      </span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                   </button>
                 </div>
               )}
@@ -324,7 +347,7 @@ export default function OrderDetailPage() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span>Order Placed</span>
                 </div>
-                <div className="text-muted-foreground">→</div>
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
                 <div
                   className={`flex items-center gap-1.5 ${
                     isBooked || isDelivered ? 'text-foreground font-medium' : 'text-muted-foreground'
@@ -337,7 +360,7 @@ export default function OrderDetailPage() {
                   />
                   <span>Dispatched (Trax)</span>
                 </div>
-                <div className="text-muted-foreground">→</div>
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
                 <div
                   className={`flex items-center gap-1.5 ${
                     isInTransit ? 'text-sky-500 font-medium' : isDelivered ? 'text-foreground' : 'text-muted-foreground'
@@ -350,7 +373,7 @@ export default function OrderDetailPage() {
                   />
                   <span>In Transit</span>
                 </div>
-                <div className="text-muted-foreground">→</div>
+                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
                 <div
                   className={`flex items-center gap-1.5 ${
                     isDelivered ? 'text-emerald-500 font-medium' : 'text-muted-foreground'
@@ -415,7 +438,7 @@ export default function OrderDetailPage() {
             <CardHeader className="p-5 pb-3 border-b border-border">
               <CardTitle className="text-sm font-medium text-foreground flex items-center justify-between">
                 <span className="flex items-center gap-2">
-                  <span>💵</span>
+                  <Banknote className="w-4 h-4 text-muted-foreground" />
                   <span>Payment & Financial Summary</span>
                 </span>
                 <span className="text-xs font-mono uppercase text-muted-foreground">
@@ -461,7 +484,7 @@ export default function OrderDetailPage() {
           <Card>
             <CardHeader className="p-5 pb-3 border-b border-border">
               <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
-                <span>🕒</span>
+                <Clock className="w-4 h-4 text-muted-foreground" />
                 <span>Order Timeline & Activity</span>
               </CardTitle>
             </CardHeader>
@@ -559,14 +582,15 @@ export default function OrderDetailPage() {
           <Card>
             <CardHeader className="p-5 pb-3 border-b border-border flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
-                <span>👤</span>
+                <User className="w-4 h-4 text-muted-foreground" />
                 <span>Customer 360</span>
               </CardTitle>
               <Link
                 href={`/customers?search=${encodeURIComponent(order.customerPhone)}`}
-                className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                className="inline-flex items-center text-[11px] text-muted-foreground hover:text-foreground transition-colors"
               >
-                View Profile →
+                <span>View Profile</span>
+                <ArrowRight className="w-3 h-3 ml-1" />
               </Link>
             </CardHeader>
             <CardContent className="p-5 space-y-3 text-xs">
@@ -586,9 +610,10 @@ export default function OrderDetailPage() {
                   )}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 hover:bg-emerald-500/20"
+                  className="inline-flex items-center gap-1.5 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 hover:bg-emerald-500/20"
                 >
-                  <span>💬</span> WhatsApp
+                  <MessageSquare className="w-3 h-3" />
+                  <span>WhatsApp</span>
                 </a>
               </div>
             </CardContent>
@@ -598,14 +623,22 @@ export default function OrderDetailPage() {
           <Card>
             <CardHeader className="p-5 pb-3 border-b border-border flex flex-row items-center justify-between">
               <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
-                <span>📍</span>
+                <MapPin className="w-4 h-4 text-muted-foreground" />
                 <span>Shipping Address</span>
               </CardTitle>
               <button
                 onClick={handleCopyAddress}
                 className="text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
               >
-                {copiedAddress ? '✓ Copied' : 'Copy'}
+                {copiedAddress ? (
+                  <span className="inline-flex items-center text-emerald-500 gap-1">
+                    <Check className="w-3 h-3" /> Copied
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <Copy className="w-3 h-3" /> Copy
+                  </span>
+                )}
               </button>
             </CardHeader>
             <CardContent className="p-5 space-y-1.5 text-xs text-muted-foreground">
@@ -623,7 +656,7 @@ export default function OrderDetailPage() {
           <Card>
             <CardHeader className="p-5 pb-3 border-b border-border">
               <CardTitle className="text-sm font-medium text-foreground flex items-center gap-2">
-                <span>🛡️</span>
+                <ShieldCheck className="w-4 h-4 text-muted-foreground" />
                 <span>COD Checks</span>
               </CardTitle>
             </CardHeader>

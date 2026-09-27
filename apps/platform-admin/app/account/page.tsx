@@ -2,10 +2,10 @@
 
 import React, { useState } from 'react';
 import { changePassword, errorMessage } from '@/lib/api';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Card } from '@repo/ui/card';
+import { Button } from '@repo/ui/button';
+import { Input } from '@repo/ui/input';
+import { Label } from '@repo/ui/label';
 
 export default function AccountPage() {
   const [currentPassword, setCurrentPassword] = useState('');

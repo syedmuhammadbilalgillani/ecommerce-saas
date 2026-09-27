@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { getDiscounts, createDiscount, setDiscountActive, formatPrice, errorMessage, type MerchantDiscount } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
 import {
@@ -103,7 +104,7 @@ export default function MerchantDiscountsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-4">
         <div>
@@ -116,7 +117,14 @@ export default function MerchantDiscountsPage() {
           onClick={() => setIsCreating(!isCreating)}
           className="text-xs font-normal h-8"
         >
-          {isCreating ? 'Close Form' : '+ Create Discount'}
+          {isCreating ? (
+            'Close Form'
+          ) : (
+            <span className="inline-flex items-center">
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Create Discount
+            </span>
+          )}
         </Button>
       </div>
 

@@ -3,6 +3,18 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import {
+  ShoppingBag,
+  ArrowLeft,
+  ArrowRight,
+  AlertCircle,
+  Banknote,
+  Lock,
+  Tag,
+  Package,
+  RotateCcw,
+  Headphones,
+} from 'lucide-react';
 import { useCart } from '../../lib/cart-context';
 import { API_URL, formatPrice, storefrontHeaders } from '../../lib/api';
 
@@ -186,13 +198,16 @@ export default function CheckoutPage() {
   if (!isCartLoading && items.length === 0) {
     return (
       <div style={{ maxWidth: '600px', margin: '4rem auto', padding: '2rem', textAlign: 'center' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🛍️</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+          <ShoppingBag size={56} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
+        </div>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem' }}>Your Cart is Empty</h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
           Explore our premium catalog to add products before checking out.
         </p>
-        <Link href="/" className="btn" style={{ padding: '0.8rem 1.75rem', textDecoration: 'none' }}>
-          ← Back to Catalog
+        <Link href="/" className="btn" style={{ padding: '0.8rem 1.75rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+          <ArrowLeft size={16} />
+          <span>Back to Catalog</span>
         </Link>
       </div>
     );
@@ -229,9 +244,13 @@ export default function CheckoutPage() {
                 borderRadius: '8px',
                 marginBottom: '1.5rem',
                 fontSize: '0.9rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
               }}
             >
-              ⚠️ {errorMessage}
+              <AlertCircle size={16} />
+              <span>{errorMessage}</span>
             </div>
           )}
 
@@ -405,7 +424,7 @@ export default function CheckoutPage() {
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Pay with cash when your package is delivered</div>
                   </div>
                 </div>
-                <span style={{ fontSize: '1.3rem' }}>💵</span>
+                <Banknote size={24} style={{ color: 'var(--accent)' }} />
               </div>
             </div>
 
@@ -432,13 +451,14 @@ export default function CheckoutPage() {
               ) : (
                 <>
                   <span>Confirm Order ({formatPrice(totalMinor)})</span>
-                  <span>→</span>
+                  <ArrowRight size={18} />
                 </>
               )}
             </button>
 
-            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              🔒 100% Secure Checkout • Courier dispatch within 24 hours across Pakistan
+            <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+              <Lock size={13} />
+              <span>100% Secure Checkout • Courier dispatch within 24 hours across Pakistan</span>
             </div>
           </form>
         </div>
@@ -481,7 +501,7 @@ export default function CheckoutPage() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#10b981', fontWeight: 600 }}>
-                  <span>🏷️</span>
+                  <Tag size={14} />
                   <span>{appliedDiscount.code} (-{formatPrice(appliedDiscount.discountAmountMinor)})</span>
                 </div>
                 <button
@@ -578,15 +598,15 @@ export default function CheckoutPage() {
           {/* Guarantee Badges */}
           <div style={{ background: 'var(--bg)', padding: '1rem', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>📦</span>
+              <Package size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
               <span><strong>Express Dispatch:</strong> Dispatched via Leopards/Trax in 24h</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>🔄</span>
+              <RotateCcw size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
               <span><strong>Easy Returns:</strong> 7-day hassle-free exchange guarantee</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span>🇵🇰</span>
+              <Headphones size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />
               <span><strong>Local Support:</strong> Direct WhatsApp support available</span>
             </div>
           </div>

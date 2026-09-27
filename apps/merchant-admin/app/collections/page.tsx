@@ -1,15 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { Plus, ExternalLink } from 'lucide-react';
 import { getCollections, createCollection, errorMessage, type StoreCollection } from '@/lib/api';
 import { ErrorBanner } from '@/components/error-banner';
 import { slugify } from '@/lib/slug';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Card } from '@repo/ui/card';
+import { Button } from '@repo/ui/button';
+import { Input } from '@repo/ui/input';
+import { Label } from '@repo/ui/label';
+import { Badge } from '@repo/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@repo/ui/table';
 
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3000';
 
@@ -70,7 +71,7 @@ export default function MerchantCollectionsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-4">
         <div>
@@ -83,7 +84,14 @@ export default function MerchantCollectionsPage() {
           onClick={() => setIsAddingCollection(!isAddingCollection)}
           className="text-xs font-normal h-8"
         >
-          {isAddingCollection ? 'Cancel' : '+ Create Collection'}
+          {isAddingCollection ? (
+            'Cancel'
+          ) : (
+            <span className="inline-flex items-center">
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Create Collection
+            </span>
+          )}
         </Button>
       </div>
 
@@ -213,9 +221,10 @@ export default function MerchantCollectionsPage() {
                       href={`${STOREFRONT_URL}/collections/${col.slug}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
+                      className="inline-flex items-center text-[11px] text-muted-foreground hover:text-foreground px-2 py-1 rounded bg-secondary border border-border transition-colors"
                     >
-                      View on Storefront ↗
+                      <span>View on Storefront</span>
+                      <ExternalLink className="w-3 h-3 ml-1" />
                     </a>
                   </TableCell>
                 </TableRow>

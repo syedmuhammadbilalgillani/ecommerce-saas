@@ -30,13 +30,11 @@ import {
   Progress,
   Separator,
   Skeleton,
-} from '@repo/ui';
-import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
+} from '@repo/ui';
 import {
   DollarSign,
   ShoppingBag,
@@ -106,7 +104,7 @@ export default function MerchantAnalyticsPage() {
   // Loading Skeleton State
   if (!loading && !analytics) {
     return (
-      <div className="space-y-4 max-w-6xl pb-12">
+      <div className="space-y-4 max-w-full pb-12">
         <ErrorBanner message={error ?? 'No analytics data returned.'} />
         <Button variant="outline" size="sm" className="text-xs" onClick={handleRefresh}>
           Retry
@@ -117,7 +115,7 @@ export default function MerchantAnalyticsPage() {
 
   if (loading || !analytics || !mounted) {
     return (
-      <div className="space-y-6 max-w-6xl pb-12">
+      <div className="space-y-6 max-w-full pb-12">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
           <div className="space-y-2">
             <Skeleton className="h-7 w-48" />
@@ -207,7 +205,7 @@ export default function MerchantAnalyticsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl pb-12">
+    <div className="space-y-6 max-w-full pb-12">
       {/* Top Header & Range Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
         <div>

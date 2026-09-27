@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { Plus, ArrowRight, ExternalLink } from 'lucide-react';
 import { AuthError, getPlatformMetrics, getPlatformTenants, formatPrice } from '@/lib/api';
 import { serverAuthHeaders } from '@/lib/server-auth';
 import {
@@ -33,7 +34,7 @@ export default async function PlatformAdminDashboard() {
   const tenants = rawTenants;
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-zinc-800/80 pb-4">
         <div>
@@ -46,7 +47,8 @@ export default async function PlatformAdminDashboard() {
           href="/tenants"
           className="inline-flex items-center justify-center rounded-md bg-zinc-100 px-3 py-1.5 text-xs font-normal text-zinc-950 hover:bg-zinc-200 transition-colors"
         >
-          + Provision Tenant
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          <span>Provision Tenant</span>
         </Link>
       </div>
 
@@ -108,8 +110,9 @@ export default async function PlatformAdminDashboard() {
             <h2 className="text-sm font-medium text-zinc-200">Enrolled Merchant Tenants</h2>
             <p className="text-xs text-zinc-500 font-normal">Active customer brands using POSflow Commerce Engine.</p>
           </div>
-          <Link href="/tenants" className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
-            Manage all ({tenants.length}) →
+          <Link href="/tenants" className="inline-flex items-center text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+            <span>Manage all ({tenants.length})</span>
+            <ArrowRight className="w-3 h-3 ml-1" />
           </Link>
         </div>
 
@@ -153,9 +156,10 @@ export default async function PlatformAdminDashboard() {
                       href={MERCHANT_ADMIN_URL}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1 rounded bg-zinc-800/60 border border-zinc-700/60 transition-colors"
+                      className="inline-flex items-center text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1 rounded bg-zinc-800/60 border border-zinc-700/60 transition-colors"
                     >
-                      Merchant portal ↗
+                      <span>Merchant portal</span>
+                      <ExternalLink className="w-3 h-3 ml-1" />
                     </a>
                   </TableCell>
                 </TableRow>

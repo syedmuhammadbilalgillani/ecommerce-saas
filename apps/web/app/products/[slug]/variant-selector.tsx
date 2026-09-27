@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Check, ShoppingCart, Zap, Lock } from 'lucide-react';
 import { type ProductVariant, formatPrice } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 
@@ -34,8 +35,9 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
           )}
         </div>
         {inStock ? (
-          <p style={{ color: 'var(--accent)', fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem' }}>
-            ✓ In Stock{activeVariant.stock <= 5 ? ` (only ${activeVariant.stock} left)` : ''} • Ships within 24 hours
+          <p style={{ color: 'var(--accent)', fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            <Check size={16} />
+            <span>In Stock{activeVariant.stock <= 5 ? ` (only ${activeVariant.stock} left)` : ''} • Ships within 24 hours</span>
           </p>
         ) : (
           <p style={{ color: '#ef4444', fontSize: '0.875rem', fontWeight: 600, marginTop: '0.25rem' }}>
@@ -93,7 +95,7 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
             gap: '0.5rem',
           }}
         >
-          <span>🛒</span>
+          <ShoppingCart size={18} />
           <span>{!inStock ? 'Sold Out' : isLoading ? 'Adding to Cart...' : 'Add to Cart'}</span>
         </button>
 
@@ -107,9 +109,14 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
             width: '100%',
             color: 'var(--text)',
             borderColor: 'var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
           }}
         >
-          🚀 Buy with Cash on Delivery (COD)
+          <Zap size={16} />
+          <span>Buy with Cash on Delivery (COD)</span>
         </button>
 
         {error && (
@@ -118,8 +125,9 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
           </div>
         )}
 
-        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-          🔒 Pay upon Delivery • 7 Days Hassle-Free Exchange
+        <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
+          <Lock size={13} />
+          <span>Pay upon Delivery • 7 Days Hassle-Free Exchange</span>
         </div>
       </div>
     </div>

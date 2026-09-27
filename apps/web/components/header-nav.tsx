@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { ShoppingCart } from 'lucide-react';
 import { useCart } from '../lib/cart-context';
 import { ThemeToggle } from './theme-toggle';
 
@@ -15,7 +16,7 @@ export function HeaderNav({ storeName }: { storeName: string | null }) {
           {storeName ?? 'Store'}
         </Link>
         <div className="nav-links">
-          <span>🇵🇰 PKR</span>
+          <span>PKR</span>
           <span style={{ color: 'var(--accent)', fontWeight: 500 }}>● COD Available</span>
 
           {/* Theme Toggle Button */}
@@ -39,7 +40,7 @@ export function HeaderNav({ storeName }: { storeName: string | null }) {
               transition: 'all 0.15s',
             }}
           >
-            <span>🛒</span>
+            <ShoppingCart size={16} />
             <span>Cart</span>
             <span
               style={{

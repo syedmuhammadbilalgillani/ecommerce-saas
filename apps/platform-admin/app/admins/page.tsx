@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { Plus, Eye, Headphones, Zap } from 'lucide-react';
 import {
   getPlatformAdmins,
   createPlatformAdmin,
@@ -123,7 +124,14 @@ export default function AdminsManagementPage() {
           onClick={() => setShowAdd(!showAdd)}
           className="text-xs font-normal h-8"
         >
-          {showAdd ? 'Cancel' : '+ Add Platform Admin'}
+          {showAdd ? (
+            'Cancel'
+          ) : (
+            <span className="inline-flex items-center">
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Add Platform Admin
+            </span>
+          )}
         </Button>
       </div>
 
@@ -172,9 +180,9 @@ export default function AdminsManagementPage() {
                 onChange={(e) => setPlatformRole(e.target.value as any)}
                 className="w-full text-xs bg-zinc-950 border border-zinc-800 rounded px-2.5 py-1.5 text-zinc-100 focus:outline-none focus:ring-1 focus:ring-zinc-600"
               >
-                <option value="super_admin">⚡ Super Admin (Full)</option>
-                <option value="support">🎧 Support (Staff/Impersonate)</option>
-                <option value="viewer">👁️ Viewer (Read-only)</option>
+                <option value="super_admin">Super Admin (Full)</option>
+                <option value="support">Support (Staff/Impersonate)</option>
+                <option value="viewer">Viewer (Read-only)</option>
               </select>
             </div>
             <div className="space-y-1">
@@ -251,16 +259,16 @@ export default function AdminsManagementPage() {
                     </TableCell>
                     <TableCell className="text-xs">
                       {adm.platformRole === 'viewer' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-zinc-400 bg-zinc-800/60 px-2 py-0.5 rounded border border-zinc-700/60">
-                          👁️ Viewer
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 bg-zinc-800/60 px-2 py-0.5 rounded border border-zinc-700/60">
+                          <Eye className="w-3 h-3" /> Viewer
                         </span>
                       ) : adm.platformRole === 'support' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
-                          🎧 Support Agent
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                          <Headphones className="w-3 h-3" /> Support Agent
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
-                          ⚡ Super Admin
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                          <Zap className="w-3 h-3" /> Super Admin
                         </span>
                       )}
                     </TableCell>

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { ArrowLeft, ExternalLink, Plus } from 'lucide-react';
 import {
   getTenant,
   updateTenant,
@@ -216,8 +217,9 @@ export default function TenantDetailPage() {
         <div role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
           {loadError ?? 'Tenant not found.'}
         </div>
-        <Link href="/tenants" className="text-xs text-zinc-400 hover:text-zinc-200 underline">
-          ← Back to tenants
+        <Link href="/tenants" className="inline-flex items-center text-xs text-zinc-400 hover:text-zinc-200 underline">
+          <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+          <span>Back to tenants</span>
         </Link>
       </div>
     );
@@ -227,8 +229,9 @@ export default function TenantDetailPage() {
     <div className="space-y-6 max-w-4xl">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-zinc-800/80 pb-4">
         <div>
-          <Link href="/tenants" className="text-[11px] text-zinc-500 hover:text-zinc-300">
-            ← Tenants
+          <Link href="/tenants" className="inline-flex items-center text-[11px] text-zinc-500 hover:text-zinc-300">
+            <ArrowLeft className="w-3 h-3 mr-1" />
+            <span>Tenants</span>
           </Link>
           <h1 className="text-xl font-normal tracking-tight text-zinc-100 mt-1">{tenant.name}</h1>
           <p className="text-xs text-zinc-500 font-normal">
@@ -258,7 +261,14 @@ export default function TenantDetailPage() {
             disabled={impersonating !== null || tenant.status === 'suspended'}
             title={tenant.status === 'suspended' ? 'Tenant is suspended' : 'Login directly into merchant portal'}
           >
-            {impersonating === 'owner' ? 'Opening Portal…' : 'Open Portal ↗'}
+            {impersonating === 'owner' ? (
+              'Opening Portal…'
+            ) : (
+              <span className="inline-flex items-center">
+                Open Portal
+                <ExternalLink className="w-3 h-3 ml-1" />
+              </span>
+            )}
           </Button>
         </div>
       </div>
@@ -349,7 +359,14 @@ export default function TenantDetailPage() {
             <p className="text-xs text-zinc-500">All retail storefronts belonging to this tenant brand.</p>
           </div>
           <Button size="sm" onClick={() => setShowAddStore((v) => !v)} className="text-xs font-normal h-8">
-            {showAddStore ? 'Cancel' : '+ Add store'}
+            {showAddStore ? (
+              'Cancel'
+            ) : (
+              <span className="inline-flex items-center">
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Add store
+              </span>
+            )}
           </Button>
         </div>
 
@@ -436,7 +453,8 @@ export default function TenantDetailPage() {
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100 underline"
                       >
-                        Visit Storefront ↗
+                        <span>Visit Storefront</span>
+                        <ExternalLink className="w-3 h-3" />
                       </a>
                     </TableCell>
                   </TableRow>
@@ -454,7 +472,14 @@ export default function TenantDetailPage() {
             <p className="text-xs text-zinc-500">Merchant admin accounts for this tenant.</p>
           </div>
           <Button size="sm" onClick={() => setShowAddStaff((v) => !v)} className="text-xs font-normal h-8">
-            {showAddStaff ? 'Cancel' : '+ Add staff login'}
+            {showAddStaff ? (
+              'Cancel'
+            ) : (
+              <span className="inline-flex items-center">
+                <Plus className="w-3.5 h-3.5 mr-1" />
+                Add staff login
+              </span>
+            )}
           </Button>
         </div>
 
@@ -545,7 +570,14 @@ export default function TenantDetailPage() {
                           className="h-7 text-[11px] px-2 text-zinc-400 hover:text-zinc-200"
                           title="Login directly as this staff user"
                         >
-                          {impersonating === u.id ? 'Opening…' : 'Impersonate ↗'}
+                          {impersonating === u.id ? (
+                            'Opening…'
+                          ) : (
+                            <span className="inline-flex items-center">
+                              Impersonate
+                              <ExternalLink className="w-3 h-3 ml-1" />
+                            </span>
+                          )}
                         </Button>
                         <Button
                           size="sm"

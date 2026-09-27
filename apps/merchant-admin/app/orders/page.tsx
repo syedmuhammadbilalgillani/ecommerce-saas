@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Check, MessageSquare, Printer, Truck } from 'lucide-react';
 import {
   getOrders,
   bookCourier,
@@ -139,7 +140,7 @@ export default function MerchantOrdersPage() {
   const filteredOrders = orders;
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border pb-4">
         <div>
@@ -249,7 +250,8 @@ export default function MerchantOrdersPage() {
                         {order.paymentMethod === 'cod' && (
                           order.whatsappVerified ? (
                             <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-medium">
-                              ✓ WA Verified
+                              <Check className="w-3 h-3" />
+                              <span>WA Verified</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-[9px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
@@ -285,14 +287,14 @@ export default function MerchantOrdersPage() {
                             variant="outline"
                             onClick={() => handleWhatsAppVerify(order)}
                             title="Send WhatsApp COD verification message"
-                            className={`h-7 text-[11px] px-2 font-normal gap-1 ${
+                            className={`h-7 text-[11px] px-2 font-normal gap-1.5 ${
                               order.whatsappVerified
                                 ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10'
                                 : 'text-foreground hover:border-emerald-500/50'
                             }`}
                           >
-                            <span className="text-[11px]">💬</span>
-                            {order.whatsappVerified ? 'WA Sent' : 'Verify WA'}
+                            <MessageSquare className="w-3 h-3" />
+                            <span>{order.whatsappVerified ? 'WA Sent' : 'Verify WA'}</span>
                           </Button>
                         )}
 
@@ -302,18 +304,20 @@ export default function MerchantOrdersPage() {
                             variant="default"
                             onClick={() => handleBookCourier(order.id)}
                             disabled={isBooking}
-                            className="h-7 text-[11px] px-2.5 font-normal"
+                            className="h-7 text-[11px] px-2.5 font-normal gap-1"
                           >
-                            {isBooking ? 'Booking...' : 'Book Trax'}
+                            <Truck className="w-3 h-3" />
+                            <span>{isBooking ? 'Booking...' : 'Book Trax'}</span>
                           </Button>
                         ) : (
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => setSelectedOrderForLabel(order)}
-                            className="h-7 text-[11px] px-2 font-normal"
+                            className="h-7 text-[11px] px-2 font-normal gap-1"
                           >
-                            Print Label
+                            <Printer className="w-3 h-3" />
+                            <span>Print Label</span>
                           </Button>
                         )}
 

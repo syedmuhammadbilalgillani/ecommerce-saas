@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { Zap, ShoppingBag, ArrowRight } from 'lucide-react';
 import { getStorefrontProducts, getStorefrontCollections, formatPrice } from '../lib/api';
 
 export const revalidate = 60; // ISR cache for 60 seconds
@@ -14,7 +15,7 @@ export default async function HomePage() {
       {/* Hero Section */}
       <section className="hero">
         <div className="hero-pill">
-          <span>⚡ Lightning Commerce</span> • <span>Shopify Taxonomy Architecture</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><Zap size={13} /> Lightning Commerce</span> • <span>Shopify Taxonomy Architecture</span>
         </div>
         <h1 className="hero-title">
           The Fastest eCommerce Storefront <br />
@@ -78,7 +79,7 @@ export default async function HomePage() {
             return (
               <div key={product.id} className="card">
                 <div className="card-image-box">
-                  🛍️
+                  <ShoppingBag size={32} strokeWidth={1.5} />
                 </div>
                 <div style={{ padding: '1rem' }}>
                   {product.category && (
@@ -93,8 +94,9 @@ export default async function HomePage() {
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Starting at</div>
                       <div className="price">{priceDisplay}</div>
                     </div>
-                    <Link href={`/products/${product.slug}`} className="btn">
-                      View Product →
+                    <Link href={`/products/${product.slug}`} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span>View Product</span>
+                      <ArrowRight size={14} />
                     </Link>
                   </div>
                 </div>

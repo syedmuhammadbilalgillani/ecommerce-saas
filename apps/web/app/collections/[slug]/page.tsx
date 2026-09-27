@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ShoppingBag, ArrowRight } from 'lucide-react';
 import { getStorefrontCollection, formatPrice } from '@/lib/api';
 
 export const revalidate = 60; // 60s ISR cache
@@ -52,7 +53,9 @@ export default async function CollectionPage({
 
           return (
             <div key={product.id} className="card">
-              <div className="card-image-box">🛍️</div>
+              <div className="card-image-box">
+                <ShoppingBag size={32} strokeWidth={1.5} />
+              </div>
               <div style={{ padding: '1rem' }}>
                 {product.category && (
                   <div style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
@@ -66,8 +69,9 @@ export default async function CollectionPage({
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>From</div>
                     <div className="price">{priceDisplay}</div>
                   </div>
-                  <Link href={`/products/${product.slug}`} className="btn">
-                    View →
+                  <Link href={`/products/${product.slug}`} className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>View Product</span>
+                    <ArrowRight size={14} />
                   </Link>
                 </div>
               </div>

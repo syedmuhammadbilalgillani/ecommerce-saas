@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import { Package, Check, Banknote, MapPin, Truck, ArrowLeft } from 'lucide-react';
 import { API_URL, formatPrice, getStoreInfo, storefrontHeaders } from '../../../lib/api';
 import { WhatsAppConfirmButton } from './WhatsAppConfirmButton';
 
@@ -34,7 +35,9 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
   if (!order) {
     return (
       <div style={{ maxWidth: '600px', margin: '4rem auto', padding: '2rem', textAlign: 'center' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📦</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+          <Package size={56} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
+        </div>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem' }}>Order not found</h1>
         <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
           We couldn&apos;t load this order. Please open the link from your order confirmation, or contact the store on WhatsApp.
@@ -72,12 +75,10 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '2rem',
-            fontWeight: 800,
             marginBottom: '1rem',
           }}
         >
-          ✓
+          <Check size={36} strokeWidth={3} />
         </div>
         <h1 style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
           Order Confirmed!
@@ -130,7 +131,7 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
             marginBottom: '2rem',
           }}
         >
-          <span style={{ fontSize: '1.75rem' }}>💵</span>
+          <Banknote size={28} style={{ color: '#facc15', flexShrink: 0 }} />
           <div>
             <div style={{ fontWeight: 700, color: '#facc15', fontSize: '0.95rem' }}>
               Cash on Delivery (COD) Payment Pending
@@ -147,7 +148,8 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
         {/* Shipping Details */}
         <div style={{ background: 'var(--surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span>📍</span> Delivery Information
+            <MapPin size={18} style={{ color: 'var(--accent)' }} />
+            <span>Delivery Information</span>
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
             <div><strong style={{ color: 'var(--text)' }}>Recipient:</strong> {order.customerName}</div>
@@ -168,7 +170,8 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
         {/* Courier Dispatch Estimate */}
         <div style={{ background: 'var(--surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span>🚚</span> Courier & Tracking
+            <Truck size={18} style={{ color: 'var(--accent)' }} />
+            <span>Courier & Tracking</span>
           </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
             <div><strong style={{ color: 'var(--text)' }}>Service:</strong> Standard Express (TCS / Leopards / Trax)</div>
@@ -216,10 +219,13 @@ export default async function OrderConfirmationPage({ params, searchParams }: Or
             padding: '0.9rem 2.5rem',
             fontSize: '1rem',
             textDecoration: 'none',
-            display: 'inline-block',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
           }}
         >
-          ← Continue Shopping
+          <ArrowLeft size={16} />
+          <span>Continue Shopping</span>
         </Link>
       </div>
     </div>

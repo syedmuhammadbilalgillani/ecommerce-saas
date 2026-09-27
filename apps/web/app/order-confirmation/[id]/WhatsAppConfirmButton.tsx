@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { MessageSquare, Check, Zap } from 'lucide-react';
 import { API_URL, storefrontHeaders } from '../../../lib/api';
 
 interface WhatsAppConfirmButtonProps {
@@ -76,15 +77,24 @@ export function WhatsAppConfirmButton({
               alignItems: 'center',
               justifyContent: 'center',
               color: '#ffffff',
-              fontSize: '1.25rem',
               flexShrink: 0,
             }}
           >
-            💬
+            <MessageSquare size={20} />
           </div>
           <div>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)' }}>
-              {verified ? '✓ Order Confirmed via WhatsApp' : '⚡ Fast-Track Dispatch: Confirm via WhatsApp'}
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              {verified ? (
+                <>
+                  <Check size={16} />
+                  <span>Order Confirmed via WhatsApp</span>
+                </>
+              ) : (
+                <>
+                  <Zap size={16} />
+                  <span>Fast-Track Dispatch: Confirm via WhatsApp</span>
+                </>
+              )}
             </div>
             <div style={{ fontSize: '0.825rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
               {verified
@@ -112,8 +122,8 @@ export function WhatsAppConfirmButton({
             transition: 'background-color 0.2s',
           }}
         >
-          <span>💬</span>
-          {verified ? 'WhatsApp Chat Open' : 'Confirm via WhatsApp (1-Click)'}
+          <MessageSquare size={16} />
+          <span>{verified ? 'WhatsApp Chat Open' : 'Confirm via WhatsApp (1-Click)'}</span>
         </button>
       </div>
     </div>

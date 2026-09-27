@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Plus, ExternalLink } from 'lucide-react';
 import {
   getPlatformTenants,
   createTenant,
@@ -120,7 +121,7 @@ export default function TenantsManagementPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 max-w-full">
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-zinc-800/80 pb-4">
         <div>
@@ -133,7 +134,14 @@ export default function TenantsManagementPage() {
           onClick={() => setIsProvisioning(!isProvisioning)}
           className="text-xs font-normal h-8"
         >
-          {isProvisioning ? 'Cancel' : '+ Provision New Tenant'}
+          {isProvisioning ? (
+            'Cancel'
+          ) : (
+            <span className="inline-flex items-center">
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              Provision New Tenant
+            </span>
+          )}
         </Button>
       </div>
 
@@ -339,7 +347,14 @@ export default function TenantsManagementPage() {
                         className="h-7 text-[11px] px-2 text-zinc-300 border-zinc-700 bg-zinc-800 hover:bg-zinc-700"
                         title={t.status === 'suspended' ? 'Tenant is suspended' : 'Login directly into merchant portal'}
                       >
-                        {impersonatingId === t.id ? 'Opening…' : 'Portal ↗'}
+                        {impersonatingId === t.id ? (
+                          'Opening…'
+                        ) : (
+                          <span className="inline-flex items-center">
+                            Portal
+                            <ExternalLink className="w-3 h-3 ml-1" />
+                          </span>
+                        )}
                       </Button>
                     </div>
                   </TableCell>

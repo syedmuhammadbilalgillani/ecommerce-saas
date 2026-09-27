@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { X, ShoppingCart, ShoppingBag, Trash2, Check, ArrowRight } from 'lucide-react';
 import { useCart } from '../lib/cart-context';
 import { formatPrice } from '../lib/api';
 
@@ -77,9 +78,12 @@ export function CartDrawer() {
               fontSize: '1.5rem',
               cursor: 'pointer',
               lineHeight: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            ✕
+            <X size={20} />
           </button>
         </div>
 
@@ -103,7 +107,9 @@ export function CartDrawer() {
           )}
           {items.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)' }}>
-              <div style={{ fontSize: '3.5rem', marginBottom: '1rem' }}>🛒</div>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+                <ShoppingCart size={48} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
+              </div>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.5rem' }}>
                 Your cart is empty
               </h3>
@@ -111,9 +117,10 @@ export function CartDrawer() {
               <button
                 onClick={closeCart}
                 className="btn"
-                style={{ marginTop: '1.5rem' }}
+                style={{ marginTop: '1.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
               >
-                Start Shopping →
+                <span>Start Shopping</span>
+                <ArrowRight size={14} />
               </button>
             </div>
           ) : (
@@ -139,11 +146,10 @@ export function CartDrawer() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '1.75rem',
                       flexShrink: 0,
                     }}
                   >
-                    🛍️
+                    <ShoppingBag size={24} strokeWidth={1.5} style={{ color: 'var(--text-muted)' }} />
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -159,12 +165,14 @@ export function CartDrawer() {
                           border: 'none',
                           color: '#ef4444',
                           cursor: 'pointer',
-                          fontSize: '1rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                           padding: '0 0.25rem',
                         }}
                         title="Remove"
                       >
-                        🗑️
+                        <Trash2 size={16} />
                       </button>
                     </div>
 
@@ -242,8 +250,9 @@ export function CartDrawer() {
               </span>
             </div>
 
-            <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginBottom: '1rem', fontWeight: 600 }}>
-              ✓ Free standard delivery included across Pakistan
+            <div style={{ fontSize: '0.75rem', color: 'var(--accent)', marginBottom: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              <Check size={14} />
+              <span>Free standard delivery included across Pakistan</span>
             </div>
 
             <Link
@@ -263,7 +272,7 @@ export function CartDrawer() {
               }}
             >
               <span>Proceed to Checkout (COD)</span>
-              <span>→</span>
+              <ArrowRight size={16} />
             </Link>
           </div>
         )}
