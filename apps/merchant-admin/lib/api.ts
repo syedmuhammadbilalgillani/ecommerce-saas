@@ -551,3 +551,50 @@ export async function setDiscountActive(discountId: string, isActive: boolean): 
     body: JSON.stringify({ isActive }),
   });
 }
+
+// ----------------------------------------------------
+// Image uploads (direct browser -> Cloudinary using a server-signed request)
+// ----------------------------------------------------
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+export async function getUploadConfig(): Promise<{ enabled: boolean }> {
+  return request<{ enabled: boolean }>('/v1/merchant/uploads/config');
+}
+
+/** Uploads one image to this tenant's Cloudinary account and returns its https URL. */
+export async function uploadImageFile(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file');
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error('Image is too large (max 10 MB)');
+
+  const sig = await request<{
+    cloudName: string;
+    apiKey: string;
+    timestamp: number;
+    folder: string;
+    allowedFormats: string;
+    signature: string;
+  }>('/v1/merchant/uploads/sign', { method: 'POST' });
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', sig.apiKey);
+  form.append('timestamp', String(sig.timestamp));
+  form.append('folder', sig.folder);
+  form.append('allowed_formats', sig.allowedFormats);
+  form.append('signature', sig.signature);
+
+  let res: Response;
+  try {
+    res = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(sig.cloudName)}/image/upload`, {
+      method: 'POST',
+      body: form,
+    });
+  } catch {
+    throw new Error('Could not reach Cloudinary. Check your connection and try again.');
+  }
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.secure_url) {
+    throw new Error(json?.error?.message || 'Image upload failed');
+  }
+  return json.secure_url as string;
+}

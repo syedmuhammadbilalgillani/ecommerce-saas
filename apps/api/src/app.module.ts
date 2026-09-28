@@ -11,6 +11,7 @@ import { CustomersModule } from './customers/customers.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PlatformModule } from './platform/platform.module';
 import { StoreModule } from './store/store.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -25,6 +26,7 @@ import { AppController } from './app.controller';
     AnalyticsModule,
     PlatformModule,
     StoreModule,
+    UploadsModule,
   ],
   controllers: [AppController],
   // Runs before every route guard, so abusive clients are cut off before any DB work.
