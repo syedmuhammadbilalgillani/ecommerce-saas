@@ -3,10 +3,10 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "nest build",
-    "dev": "nest start --watch",
-    "start": "node dist/main",
-    "start:prod": "node dist/main",
+    "build": "node init && nest build",
+    "dev": "node init && nest start --watch",
+    "start": "node init && node dist/main",
+    "start:prod": "node init && node dist/main",
     "test": "node --test test/unit.test.ts",
     "test:e2e": "nest build && node --test --test-concurrency=1 test/e2e.test.ts",
     "check-types": "tsc --noEmit -p ."
