@@ -156,6 +156,7 @@ All tables have `created_at`; mutable ones have `updated_at` (timestamptz). Mone
 | Table | Key columns | Notes |
 | :--- | :--- | :--- |
 | `tenants` | `id`, `name`, `default_currency`, `default_locale`, `status` (`active`/`suspended`), `plan` (`starter`/`growth`/`enterprise`), `plan_price_minor`, `plan_interval` | Real ARR computed dynamically |
+| `tenant_cloudinary` | `tenant_id` (PK)→tenants, `cloud_name`, `api_key`, `api_secret_encrypted` | Per-tenant Cloudinary account entered by platform admins; secret is AES-256-GCM encrypted, never returned by the API |
 | `stores` | `id`, `tenant_id`→tenants, `name`, `slug` (UNIQUE), `currency`, `timezone`, `whatsapp_phone` (E.164), `next_order_number` | Fleet of stores per tenant |
 | `categories` | `id`, `name`, `full_name`, `parent_id`→categories, `level` | Global taxonomy, seeded by migration 0002 |
 | `collections` | `id`, `tenant_id`, `store_id`, `title`, `slug`, `collection_type`, `rules`, `is_published` | UNIQUE (`store_id`,`slug`) |
@@ -213,6 +214,8 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 | Method | Endpoint | Notes |
 | :--- | :--- | :--- |
 | GET/PATCH | `/store` | Store name, WhatsApp number |
+| GET | `/uploads/config` | `{ enabled }` — whether this tenant has Cloudinary configured |
+| POST | `/uploads/sign` | 60/min; signed params for a direct browser → Cloudinary upload (folder `posflow/<tenantId>`, image formats only) |
 | GET | `/orders?limit&cursor&tab&q` | Keyset pages; tabs `all, unverified, pending_dispatch, in_transit, delivered, cancelled`; exact `counts` |
 | GET | `/orders/:id` | |
 | PATCH | `/orders/:id/status`, `/orders/:id/notes` | Whitelisted status fields |
@@ -235,6 +238,8 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 | GET | `/tenants/:id` | Tenant detail: tenant, store fleet, slug, WhatsApp, 30-day GMV, plan details |
 | PATCH | `/tenants/:id` | Update tenant name, store name, slug, and/or billing plan (`super_admin`) |
 | PATCH | `/tenants/:id/status` | `active` / `suspended` (`super_admin`) |
+| GET | `/tenants/:id/cloudinary` | Cloud name + API key + configured flag (never the secret) |
+| PUT/DELETE | `/tenants/:id/cloudinary` | Save (verified against Cloudinary before storing; 10/min) or remove tenant Cloudinary credentials (`super_admin`, audited) |
 | POST | `/tenants/:id/stores` | Provision an additional store in tenant fleet (`super_admin`, `support`) |
 | POST | `/tenants/:id/impersonate` | Issue 5-min single-use support impersonation token (`super_admin`, `support`) |
 | GET/POST | `/tenants/:id/users` | List staff users / create additional merchant login (`super_admin`, `support`) |
@@ -279,6 +284,7 @@ The monorepo uses a single, centralized `.env` file located at the repository ro
 | `TRUST_PROXY` | api | `false` | Reverse proxy hop count (e.g. `1` or `false`). Parser safely accepts boolean/number |
 | `RATE_LIMIT_PER_MINUTE` | api | `300` | Global per-IP request rate limit |
 | `RATE_LIMIT_DISABLED` | api | `false` | Local test suite only; ignored in production |
+| `SECRETS_ENCRYPTION_KEY` | api | — (required to save credentials) | Min 16 chars; encrypts tenant Cloudinary secrets at rest. Changing it invalidates saved secrets |
 | `COOKIE_DOMAIN` | api | (host-only) | Optional domain attribute for cookies |
 | `API_URL` | merchant-admin, platform-admin | `http://127.0.0.1:4000` | Target of the `/api/*` rewrite and server-side calls |
 | `NEXT_PUBLIC_API_URL` | web, admins | `http://127.0.0.1:4000` | Storefront and client-side API endpoint |
@@ -379,7 +385,13 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 - [x] **Storefront:** `VariantSelector` renders one pill row per option axis (e.g. separate Size and Color rows) when structured data exists, resolving the pick to the matching variant — falls back to the old whole-title pills for any product created before this migration. Product detail, home, and collection pages render the real first product image, falling back to the placeholder icon when a product has none.
 - [ ] Not yet done: cart-drawer and order-confirmation line items still don't show a thumbnail (needs `cart.service.ts`/`orders.service.ts` to join in the image) — tracked in the backlog below.
 
-### Next — Step 8: Launch
+### Hardening Step 8 — Per-tenant Cloudinary image uploads
+- [x] **`tenant_cloudinary` table** (migration `0006`): each tenant uses its own Cloudinary account; the platform admin creates the account and enters cloud name / API key / API secret on the tenant detail page. The secret is AES-256-GCM encrypted with `SECRETS_ENCRYPTION_KEY`, is never returned by any endpoint, and credentials are verified against Cloudinary's `/ping` before saving. Save/remove are `super_admin` only and audit-logged (`tenant.cloudinary_configured` / `tenant.cloudinary_removed`).
+- [x] **Direct browser uploads:** the merchant API only issues a signed request (`POST /v1/merchant/uploads/sign`); the browser uploads straight to the tenant's Cloudinary, so files never pass through the API and the secret never reaches the client. Uploads are limited to image formats, 10 MB, and the tenant's own folder.
+- [x] **Reusable `ImageUploadButton`** (`apps/merchant-admin/components/image-upload-button.tsx`): drop-in component for any place image URLs are collected; renders nothing unless uploads are enabled for the tenant, so URL entry remains the fallback. Used by the product editor and the create-product form.
+- [ ] Not yet verified against a live Cloudinary account; per-plan storage limits and thumbnail/size transformations are not implemented.
+
+### Next — Step 9: Launch
 - [ ] Production database (separate Neon project/branch) + `db:migrate`; point-in-time restore enabled and a restore tested.
 - [ ] Hosting for API and the three Next apps; domains + HTTPS; production env vars (§9).
 - [ ] Push the repository to a private remote (currently local only).

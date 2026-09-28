@@ -307,3 +307,28 @@ export async function getAuditLogs(params?: {
   return request<AuditLog[]>(`/v1/platform/audit-logs${qStr ? `?${qStr}` : ''}`);
 }
 
+
+// ----------------------------------------------------
+// Per-tenant Cloudinary (image uploads)
+// ----------------------------------------------------
+export type TenantCloudinary =
+  | { configured: false }
+  | { configured: true; cloudName: string; apiKey: string; updatedAt: string };
+
+export async function getTenantCloudinary(tenantId: string): Promise<TenantCloudinary> {
+  return request<TenantCloudinary>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/cloudinary`);
+}
+
+export async function setTenantCloudinary(
+  tenantId: string,
+  data: { cloudName: string; apiKey: string; apiSecret: string }
+): Promise<TenantCloudinary> {
+  return request<TenantCloudinary>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/cloudinary`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function removeTenantCloudinary(tenantId: string): Promise<void> {
+  await request<unknown>(`/v1/platform/tenants/${encodeURIComponent(tenantId)}/cloudinary`, { method: 'DELETE' });
+}

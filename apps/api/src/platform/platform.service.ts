@@ -5,6 +5,7 @@ import { type Database, tenants, stores, orders, users, sessions, eq, and, ne, g
 import { AuthService, type SessionUser, type PlatformRole } from '../auth/auth.service';
 import { AuditLogService } from './audit-log.service';
 import { TelemetryService } from '../common/telemetry.service';
+import { CloudinaryService } from '../uploads/cloudinary.service';
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TENANT_STATUSES = ['active', 'suspended'] as const;
@@ -28,6 +29,7 @@ export class PlatformService {
     private readonly authService: AuthService,
     private readonly auditLogService: AuditLogService,
     private readonly telemetryService: TelemetryService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
 
   async getPlatformAnalytics() {
@@ -386,6 +388,36 @@ export class PlatformService {
 
     const [tenant] = (await this.listTenants()).filter((t) => t.id === tenantId);
     return tenant;
+  }
+
+  async getTenantCloudinary(tenantId: string) {
+    return this.cloudinaryService.getPublicConfig(tenantId);
+  }
+
+  async setTenantCloudinary(tenantId: string, body: { cloudName?: unknown; apiKey?: unknown; apiSecret?: unknown }, actor: SessionUser) {
+    const config = await this.cloudinaryService.save(tenantId, body ?? {});
+    await this.auditLogService.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'tenant.cloudinary_configured',
+      targetType: 'tenant',
+      targetId: tenantId,
+      metadata: { cloudName: config.configured ? config.cloudName : null },
+    });
+    return config;
+  }
+
+  async removeTenantCloudinary(tenantId: string, actor: SessionUser) {
+    await this.cloudinaryService.remove(tenantId);
+    await this.auditLogService.log({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'tenant.cloudinary_removed',
+      targetType: 'tenant',
+      targetId: tenantId,
+    });
   }
 
   async listTenantUsers(tenantId: string) {

@@ -33,6 +33,7 @@ import {
   TableRow,
 } from '@repo/ui';
 import { ResetPasswordDialog } from '@/components/reset-password-dialog';
+import { CloudinaryCard } from '@/components/cloudinary-card';
 
 const MERCHANT_ADMIN_URL = process.env.NEXT_PUBLIC_MERCHANT_ADMIN_URL || 'http://localhost:3001';
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'http://localhost:3000';
@@ -605,6 +606,8 @@ export default function TenantDetailPage() {
           </Table>
         </div>
       </Card>
+
+      <CloudinaryCard tenantId={tenant.id} />
 
       {resettingUser && (
         <ResetPasswordDialog
