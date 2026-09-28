@@ -161,7 +161,8 @@ All tables have `created_at`; mutable ones have `updated_at` (timestamptz). Mone
 | `collections` | `id`, `tenant_id`, `store_id`, `title`, `slug`, `collection_type`, `rules`, `is_published` | UNIQUE (`store_id`,`slug`) |
 | `collection_products` | `collection_id`, `product_id`, `position` | |
 | `products` | `id`, `tenant_id`, `store_id`, `category_id`, `title`, `slug`, `description`, `product_type`, `vendor`, `tags`, `options`, `is_published` | UNIQUE (`store_id`,`slug`) |
-| `product_variants` | `id`, `product_id`, `title`, `sku`, `price_minor`, `compare_at_price_minor`, `stock` | `CHECK (stock >= 0)` |
+| `product_variants` | `id`, `product_id`, `title`, `sku`, `price_minor`, `compare_at_price_minor`, `stock`, `option1`, `option2`, `option3` | `CHECK (stock >= 0)`; `option1/2/3` are Shopify-style structured values positionally aligned with the parent product's `options` array |
+| `product_images` | `id`, `tenant_id`, `product_id`, `url`, `alt_text`, `position` | Ordered gallery per product; replaced wholesale via `PATCH /v1/merchant/products/:id/images` |
 | `carts` / `cart_items` | cart: `store_id`, `currency`; item: `variant_id`, `quantity` | Prices are never stored on the cart |
 | `orders` | `store_id`, `order_number`, customer + shipping fields, `payment_method`, `financial_status`, `fulfillment_status`, `order_status`, `courier_*`, `customer_id`, `discount_code`, `discount_minor`, `subtotal/shipping_fee/total_minor`, `notes`, `access_token` | UNIQUE (`store_id`,`order_number`) |
 | `order_items` | `order_id`, `variant_id`, `product_id`, `title`, `variant_title`, `sku`, `unit_price_minor`, `quantity`, `total_minor` | Immutable snapshot (no FK to variants) |
@@ -218,7 +219,8 @@ Responses use `{ success, data }`; paginated lists add `nextCursor` (+ `counts` 
 | POST | `/orders/:id/book-courier`, `/orders/:id/verify-whatsapp` | |
 | GET/POST | `/products` | |
 | PATCH | `/products/:productId` | Details, slug, publish/unpublish |
-| PATCH | `/products/:productId/variants/:variantId` | SKU, title, prices |
+| PATCH | `/products/:productId/variants/:variantId` | SKU, title, prices, `option1/2/3` |
+| PATCH | `/products/:productId/images` | Full replace of the product's image list (`{ images: [{ url, altText }] }`), order = array order |
 | POST | `/products/:productId/variants/:variantId/stock-adjustments` | `{ delta }` |
 | GET | `/categories` · GET/POST `/collections` | |
 | GET/POST | `/discounts` · PATCH `/discounts/:id` | `{ isActive }` |
@@ -370,7 +372,14 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 - [x] **Complete Lucide Icon Migration:** Replaced all raw unicode emojis across all storefront and admin UIs with standard Lucide React icons.
 - [x] **Full `@repo/ui` Adoption:** Removed all local `ui/` duplicates in `apps/merchant-admin` and `apps/platform-admin`, standardizing on direct `@repo/ui` imports backed by Tailwind CSS v4.
 
-### Next — Step 7: Launch
+### Hardening Step 7 — Shopify-style product images & structured variant options *(commit `f3fa94b`)*
+- [x] **`product_images` table** (migration `0005`): ordered gallery per product (`url`, `alt_text`, `position`), replacing the previous no-image state across the whole storefront.
+- [x] **Structured variant options (`option1`/`option2`/`option3`)** on `product_variants`, positionally aligned to the parent product's `options` array — closes the gap with Shopify's own catalog model, where a variant's axis values (e.g. Size = "M", Color = "Black") are queryable columns, not just parsed out of a free-text title.
+- [x] **Merchant admin:** product editor gained an image list manager (add/remove/reorder URL + alt text, saved via new `PATCH /v1/merchant/products/:id/images`) and per-variant Option 1/2/3 columns; the product creation form's dynamic Size/Color matrix generator now writes each variant's real option values instead of only a combined title string.
+- [x] **Storefront:** `VariantSelector` renders one pill row per option axis (e.g. separate Size and Color rows) when structured data exists, resolving the pick to the matching variant — falls back to the old whole-title pills for any product created before this migration. Product detail, home, and collection pages render the real first product image, falling back to the placeholder icon when a product has none.
+- [ ] Not yet done: cart-drawer and order-confirmation line items still don't show a thumbnail (needs `cart.service.ts`/`orders.service.ts` to join in the image) — tracked in the backlog below.
+
+### Next — Step 8: Launch
 - [ ] Production database (separate Neon project/branch) + `db:migrate`; point-in-time restore enabled and a restore tested.
 - [ ] Hosting for API and the three Next apps; domains + HTTPS; production env vars (§9).
 - [ ] Push the repository to a private remote (currently local only).
@@ -378,7 +387,8 @@ Monorepo, Drizzle schema, NestJS+Fastify API, storefront (catalog, PDP, cart dra
 ### Backlog (after launch)
 - [ ] Call `revalidateTag` on product/store edits (Invariant 4) and measure the latency SLAs (Invariant 3).
 - [ ] Courier API integration (Trax/Leopards) for real CNs and airway bills.
-- [ ] Product images; collection editing / assigning products after creation.
+- [ ] Cart-drawer and order-confirmation line-item thumbnails (product images exist since Step 7, but `cart.service.ts`/`orders.service.ts` don't join them in yet).
+- [ ] Collection editing / assigning products after creation.
 - [ ] Rate limits and lockouts in Redis for multi-instance; error tracking (e.g. Sentry); ESLint configs for the admin apps.
 - [ ] Email-based "forgot password" (needs an email provider).
 - [ ] Remove unused `apps/docs`.
