@@ -27,6 +27,7 @@ import {
   TableRow,
 } from '@repo/ui';
 import { ErrorBanner } from '@/components/error-banner';
+import { ImageUploadButton } from '@/components/image-upload-button';
 import { ProductEditor } from '@/components/product-editor';
 import { slugify } from '@/lib/slug';
 
@@ -316,6 +317,11 @@ export default function MerchantProductsPage() {
                       value={imageUrlsInput}
                       onChange={(e) => setImageUrlsInput(e.target.value)}
                       className="w-full text-xs bg-muted/60 border border-border rounded px-2.5 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                    />
+                    <ImageUploadButton
+                      label="Upload images from computer"
+                      onUploaded={(urls) => setImageUrlsInput(prev => [prev.trim(), ...urls].filter(Boolean).join('\n'))}
+                      onError={setError}
                     />
                   </div>
                 </div>

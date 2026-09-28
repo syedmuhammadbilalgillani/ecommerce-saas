@@ -15,6 +15,7 @@ import {
 import { slugify } from '@/lib/slug';
 import { Button, Input, Label } from '@repo/ui';
 import { ErrorBanner } from '@/components/error-banner';
+import { ImageUploadButton } from '@/components/image-upload-button';
 
 /** Rupees typed by the merchant -> integer minor units (paisa). */
 function toMinor(rupees: string): number {
@@ -162,7 +163,6 @@ function ImagesEditor({
     images.map((img) => ({ url: img.url, altText: img.altText ?? '' }))
   );
   const [busy, setBusy] = useState(false);
-
   const dirty =
     drafts.length !== images.length ||
     drafts.some((d, i) => d.url !== images[i]?.url || d.altText !== (images[i]?.altText ?? ''));
@@ -226,8 +226,12 @@ function ImagesEditor({
         ))}
       </div>
       <div className="flex items-center gap-2 pt-1">
+        <ImageUploadButton
+          onUploaded={(urls) => setDrafts((prev) => [...prev, ...urls.map((url) => ({ url, altText: '' }))])}
+          onError={onError}
+        />
         <Button type="button" size="sm" variant="outline" onClick={addRow} className="h-7 text-[11px] px-2">
-          Add image
+          Add image URL
         </Button>
         <Button type="button" size="sm" disabled={!dirty || busy} onClick={save} className="h-7 text-[11px] px-2">
           {busy ? 'Saving...' : 'Save images'}
