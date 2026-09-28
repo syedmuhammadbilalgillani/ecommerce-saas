@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Put, Delete, Body, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { CurrentPlatformUser, PlatformGuard, PlatformRoleGuard, PlatformRoles } from '../auth/guards';
 import type { SessionUser } from '../auth/auth.service';
 import { RateLimit } from '../common/rate-limit';
@@ -67,6 +67,30 @@ export class PlatformController {
       success: true,
       data,
     };
+  }
+
+  @Get('tenants/:id/cloudinary')
+  async getTenantCloudinary(@Param('id') id: string) {
+    return { success: true, data: await this.platformService.getTenantCloudinary(id) };
+  }
+
+  @Put('tenants/:id/cloudinary')
+  @PlatformRoles('super_admin')
+  @RateLimit(10, 60)
+  async setTenantCloudinary(
+    @Param('id') id: string,
+    @Body() body: { cloudName?: string; apiKey?: string; apiSecret?: string },
+    @CurrentPlatformUser() admin: SessionUser
+  ) {
+    return { success: true, data: await this.platformService.setTenantCloudinary(id, body, admin) };
+  }
+
+  @Delete('tenants/:id/cloudinary')
+  @PlatformRoles('super_admin')
+  @HttpCode(HttpStatus.OK)
+  async removeTenantCloudinary(@Param('id') id: string, @CurrentPlatformUser() admin: SessionUser) {
+    await this.platformService.removeTenantCloudinary(id, admin);
+    return { success: true };
   }
 
   @Post('tenants/:id/stores')

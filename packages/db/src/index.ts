@@ -19,6 +19,16 @@ export const tenants = pgTable('tenants', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Per-tenant Cloudinary credentials, entered by platform admins. The API secret is stored AES-GCM encrypted.
+export const tenantCloudinary = pgTable('tenant_cloudinary', {
+  tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).primaryKey().notNull(),
+  cloudName: text('cloud_name').notNull(),
+  apiKey: text('api_key').notNull(),
+  apiSecretEncrypted: text('api_secret_encrypted').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const stores = pgTable('stores', {
   id: text('id').primaryKey().notNull(),
   tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
@@ -577,6 +587,7 @@ export const discountsRelations = relations(discounts, ({ one }) => ({
 // ----------------------------------------------------
 export const schema = {
   tenants,
+  tenantCloudinary,
   stores,
   categories,
   collections,
