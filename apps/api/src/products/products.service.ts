@@ -5,6 +5,7 @@ import {
   type Database,
   products,
   productVariants,
+  productImages,
   collections,
   collectionProducts,
   eq,
@@ -12,9 +13,26 @@ import {
   ne,
   gte,
   desc,
+  asc,
   inArray,
   sql,
 } from '@repo/db';
+
+const PRODUCT_WITH_CATALOG = {
+  variants: true as const,
+  images: { orderBy: [asc(productImages.position)] },
+  category: true as const,
+};
+
+const MAX_IMAGE_URL_LENGTH = 2048;
+
+function requireImageUrl(value: unknown, field: string): string {
+  const url = requireText(value, field);
+  if (url.length > MAX_IMAGE_URL_LENGTH || !/^https?:\/\//i.test(url)) {
+    throw new BadRequestException(`${field} must be a valid http(s) URL`);
+  }
+  return url;
+}
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -51,10 +69,7 @@ export class ProductsService {
   async listStorefrontProducts(storeId: string) {
     return this.db.query.products.findMany({
       where: and(eq(products.storeId, storeId), eq(products.isPublished, true)),
-      with: {
-        variants: true,
-        category: true,
-      },
+      with: PRODUCT_WITH_CATALOG,
       orderBy: [desc(products.createdAt)],
     });
   }
@@ -66,10 +81,7 @@ export class ProductsService {
         eq(products.slug, slug),
         eq(products.isPublished, true)
       ),
-      with: {
-        variants: true,
-        category: true,
-      },
+      with: PRODUCT_WITH_CATALOG,
     });
     return product ?? null;
   }
@@ -77,10 +89,7 @@ export class ProductsService {
   async listMerchantProducts(storeId: string) {
     return this.db.query.products.findMany({
       where: eq(products.storeId, storeId),
-      with: {
-        variants: true,
-        category: true,
-      },
+      with: PRODUCT_WITH_CATALOG,
       orderBy: [desc(products.createdAt)],
     });
   }
@@ -116,6 +125,19 @@ export class ProductsService {
           ? null
           : requireNonNegativeInt(v.compareAtPriceMinor, `variants[${idx}].compareAtPriceMinor`),
       stock: requireNonNegativeInt(v?.stock ?? 0, `variants[${idx}].stock`),
+      option1: v?.option1 ? String(v.option1).trim() || null : null,
+      option2: v?.option2 ? String(v.option2).trim() || null : null,
+      option3: v?.option3 ? String(v.option3).trim() || null : null,
+    }));
+
+    const rawImages: any[] = Array.isArray(payload?.images) ? payload.images : [];
+    const imagesToInsert = rawImages.map((img, idx) => ({
+      id: this.generateId(`img${idx}`),
+      tenantId,
+      productId: prodId,
+      url: requireImageUrl(img?.url, `images[${idx}].url`),
+      altText: img?.altText ? String(img.altText).trim() || null : null,
+      position: idx,
     }));
 
     const collectionIds: string[] = Array.isArray(payload?.collectionIds) ? payload.collectionIds : [];
@@ -147,6 +169,10 @@ export class ProductsService {
 
       await tx.insert(productVariants).values(variantsToInsert);
 
+      if (imagesToInsert.length > 0) {
+        await tx.insert(productImages).values(imagesToInsert);
+      }
+
       if (collectionIds.length > 0) {
         await tx.insert(collectionProducts).values(
           collectionIds.map((collectionId) => ({
@@ -161,7 +187,7 @@ export class ProductsService {
 
     return this.db.query.products.findFirst({
       where: eq(products.id, prodId),
-      with: { variants: true, category: true },
+      with: PRODUCT_WITH_CATALOG,
     });
   }
 
@@ -211,6 +237,9 @@ export class ProductsService {
       patch.compareAtPriceMinor =
         payload.compareAtPriceMinor === null ? null : requireNonNegativeInt(payload.compareAtPriceMinor, 'compareAtPriceMinor');
     }
+    if (payload?.option1 !== undefined) patch.option1 = payload.option1 ? String(payload.option1).trim() || null : null;
+    if (payload?.option2 !== undefined) patch.option2 = payload.option2 ? String(payload.option2).trim() || null : null;
+    if (payload?.option3 !== undefined) patch.option3 = payload.option3 ? String(payload.option3).trim() || null : null;
 
     const updated = await this.db
       .update(productVariants)
@@ -218,6 +247,33 @@ export class ProductsService {
       .where(and(eq(productVariants.id, variantId), eq(productVariants.productId, productId)))
       .returning({ id: productVariants.id });
     if (updated.length === 0) throw new NotFoundException('Variant not found');
+
+    return this.getMerchantProduct(storeId, productId);
+  }
+
+  /** Replaces a product's full image list (order = array order). Simple replace, not incremental patching. */
+  async setProductImages(storeId: string, productId: string, rawImages: unknown) {
+    const tenantId = await resolveTenantId(this.db, storeId);
+    await this.requireStoreProduct(storeId, productId);
+
+    if (!Array.isArray(rawImages)) {
+      throw new BadRequestException('images must be a list');
+    }
+    const imagesToInsert = rawImages.map((img: any, idx: number) => ({
+      id: this.generateId(`img${idx}`),
+      tenantId,
+      productId,
+      url: requireImageUrl(img?.url, `images[${idx}].url`),
+      altText: img?.altText ? String(img.altText).trim() || null : null,
+      position: idx,
+    }));
+
+    await this.db.transaction(async (tx) => {
+      await tx.delete(productImages).where(and(eq(productImages.productId, productId), eq(productImages.tenantId, tenantId)));
+      if (imagesToInsert.length > 0) {
+        await tx.insert(productImages).values(imagesToInsert);
+      }
+    });
 
     return this.getMerchantProduct(storeId, productId);
   }
@@ -259,7 +315,7 @@ export class ProductsService {
   private async getMerchantProduct(storeId: string, productId: string) {
     const product = await this.db.query.products.findFirst({
       where: and(eq(products.id, productId), eq(products.storeId, storeId)),
-      with: { variants: true, category: true },
+      with: PRODUCT_WITH_CATALOG,
     });
     if (!product) throw new NotFoundException('Product not found');
     return product;
@@ -301,9 +357,7 @@ export class ProductsService {
         collectionProducts: {
           with: {
             product: {
-              with: {
-                variants: true,
-              },
+              with: PRODUCT_WITH_CATALOG,
             },
           },
         },

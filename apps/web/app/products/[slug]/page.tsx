@@ -53,9 +53,19 @@ export default async function ProductDetailPage({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            overflow: 'hidden',
           }}
         >
-          <ShoppingBag size={72} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+          {product.images?.[0] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={product.images[0].url}
+              alt={product.images[0].altText || product.title}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <ShoppingBag size={72} strokeWidth={1} style={{ color: 'var(--text-muted)' }} />
+          )}
         </div>
 
         {/* Product Details & Purchase Island */}
@@ -81,7 +91,7 @@ export default async function ProductDetailPage({
           </p>
 
           {/* Interactive Client Island (Variant Buttons + Instant Fastify Add-to-Cart) */}
-          <VariantSelector variants={product.variants} />
+          <VariantSelector variants={product.variants} options={product.options} />
 
           {/* Value Props */}
           <div

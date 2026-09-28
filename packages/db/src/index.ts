@@ -135,6 +135,10 @@ export const productVariants = pgTable(
     priceMinor: integer('price_minor').notNull(),
     compareAtPriceMinor: integer('compare_at_price_minor'),
     stock: integer('stock').default(0).notNull(),
+    // Shopify-style structured option values, aligned positionally with the parent product's `options` array.
+    option1: text('option1'),
+    option2: text('option2'),
+    option3: text('option3'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -142,6 +146,23 @@ export const productVariants = pgTable(
     index('idx_variants_product').on(table.productId),
     index('idx_variants_tenant').on(table.tenantId),
     check('chk_variants_stock_nonnegative', sql`${table.stock} >= 0`),
+  ]
+);
+
+export const productImages = pgTable(
+  'product_images',
+  {
+    id: text('id').primaryKey().notNull(),
+    tenantId: text('tenant_id').references(() => tenants.id, { onDelete: 'cascade' }).notNull(),
+    productId: text('product_id').references(() => products.id, { onDelete: 'cascade' }).notNull(),
+    url: text('url').notNull(),
+    altText: text('alt_text'),
+    position: integer('position').default(0).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_product_images_product').on(table.productId),
+    index('idx_product_images_tenant').on(table.tenantId),
   ]
 );
 
@@ -472,12 +493,20 @@ export const productsRelations = relations(products, ({ one, many }) => ({
     references: [categories.id],
   }),
   variants: many(productVariants),
+  images: many(productImages),
   collectionProducts: many(collectionProducts),
 }));
 
 export const productVariantsRelations = relations(productVariants, ({ one }) => ({
   product: one(products, {
     fields: [productVariants.productId],
+    references: [products.id],
+  }),
+}));
+
+export const productImagesRelations = relations(productImages, ({ one }) => ({
+  product: one(products, {
+    fields: [productImages.productId],
     references: [products.id],
   }),
 }));
@@ -554,6 +583,7 @@ export const schema = {
   collectionProducts,
   products,
   productVariants,
+  productImages,
   carts,
   cartItems,
   orders,
@@ -573,6 +603,7 @@ export const schema = {
   collectionProductsRelations,
   productsRelations,
   productVariantsRelations,
+  productImagesRelations,
   cartsRelations,
   cartItemsRelations,
   ordersRelations,

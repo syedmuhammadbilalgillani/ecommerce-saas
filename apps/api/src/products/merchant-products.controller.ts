@@ -31,6 +31,12 @@ export class MerchantProductsController {
     return { success: true, data: updated };
   }
 
+  @Patch(':productId/images')
+  async setImages(@CurrentMerchant() merchant: MerchantContext, @Param('productId') productId: string, @Body() body: { images: unknown }) {
+    const updated = await this.productsService.setProductImages(merchant.storeId, productId, body?.images);
+    return { success: true, data: updated };
+  }
+
   @Patch(':productId/variants/:variantId')
   async updateVariant(
     @CurrentMerchant() merchant: MerchantContext,

@@ -14,12 +14,27 @@ export interface ProductVariant {
   priceMinor: number;
   compareAtPriceMinor?: number | null;
   stock: number;
+  option1?: string | null;
+  option2?: string | null;
+  option3?: string | null;
+}
+
+export interface ProductImage {
+  id: string;
+  url: string;
+  altText?: string | null;
+  position: number;
 }
 
 export interface ProductCategory {
   id: string;
   name: string;
   fullName: string;
+}
+
+export interface ProductOption {
+  name: string;
+  values: string[];
 }
 
 export interface Product {
@@ -32,8 +47,10 @@ export interface Product {
   productType?: string | null;
   vendor?: string | null;
   tags?: string[];
+  options?: ProductOption[] | null;
   isPublished: boolean;
   variants: ProductVariant[];
+  images: ProductImage[];
 }
 
 export interface StorefrontCollection {

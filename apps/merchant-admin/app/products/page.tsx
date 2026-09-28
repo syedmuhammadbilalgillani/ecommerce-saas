@@ -43,6 +43,7 @@ interface GeneratedVariant {
   sku: string;
   price: string;
   stock: string;
+  optionValues: string[];
 }
 
 export default function MerchantProductsPage() {
@@ -64,6 +65,7 @@ export default function MerchantProductsPage() {
   const [productType, setProductType] = useState('');
   const [vendor, setVendor] = useState('');
   const [tagsInput, setTagsInput] = useState('');
+  const [imageUrlsInput, setImageUrlsInput] = useState('');
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
 
   // Dynamic Shopify-style options (e.g., Size, Color)
@@ -106,6 +108,7 @@ export default function MerchantProductsPage() {
           sku: slug ? `${slug.toUpperCase()}-DEF` : 'SKU-DEF',
           price: '2990',
           stock: '50',
+          optionValues: [],
         },
       ]);
       return;
@@ -129,6 +132,7 @@ export default function MerchantProductsPage() {
         sku: `${baseSkuPrefix}-${skuSuffix}`,
         price: '3490',
         stock: '25',
+        optionValues: comb,
       };
     });
 
@@ -197,7 +201,15 @@ export default function MerchantProductsPage() {
         sku: v.sku,
         priceMinor: Math.round(parseFloat(v.price || '0') * 100),
         stock: parseInt(v.stock || '0', 10),
+        option1: v.optionValues[0] ?? null,
+        option2: v.optionValues[1] ?? null,
+        option3: v.optionValues[2] ?? null,
       })),
+      images: imageUrlsInput
+        .split('\n')
+        .map(u => u.trim())
+        .filter(Boolean)
+        .map(url => ({ url })),
     };
 
     setSaving(true);
@@ -210,6 +222,7 @@ export default function MerchantProductsPage() {
       setSlug('');
       setSlugEdited(false);
       setDescription('');
+      setImageUrlsInput('');
     } catch (err) {
       setError(`Could not save product: ${errorMessage(err)}`);
     } finally {
@@ -291,6 +304,18 @@ export default function MerchantProductsPage() {
                       placeholder="High-density combed yarn, breathable weave, button-down collar..."
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="images">Image URLs (one per line, first is primary)</Label>
+                    <textarea
+                      id="images"
+                      rows={3}
+                      placeholder={'https://example.com/photo-1.jpg\nhttps://example.com/photo-2.jpg'}
+                      value={imageUrlsInput}
+                      onChange={(e) => setImageUrlsInput(e.target.value)}
+                      className="w-full text-xs bg-muted/60 border border-border rounded px-2.5 py-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
                     />
                   </div>
                 </div>

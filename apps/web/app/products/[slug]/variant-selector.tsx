@@ -1,18 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, ShoppingCart, Zap, Lock } from 'lucide-react';
-import { type ProductVariant, formatPrice } from '../../../lib/api';
+import { type ProductOption, type ProductVariant, formatPrice } from '../../../lib/api';
 import { useCart } from '../../../lib/cart-context';
 
-export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
+function optionValue(variant: ProductVariant, index: number): string | null | undefined {
+  if (index === 0) return variant.option1;
+  if (index === 1) return variant.option2;
+  if (index === 2) return variant.option3;
+  return null;
+}
+
+export function VariantSelector({
+  variants,
+  options,
+}: {
+  variants: ProductVariant[];
+  options?: ProductOption[] | null;
+}) {
+  // Structured options (Shopify-style option1/2/3) let us render one pill row per
+  // axis (Size, Color, ...) instead of one pill per whole variant title.
+  const structuredOptions = useMemo(
+    () => (options ?? []).filter((opt) => variants.some((v, _i) => opt.values.some((val) => [v.option1, v.option2, v.option3].includes(val)))),
+    [options, variants]
+  );
+  const useStructuredSelector = structuredOptions.length > 0;
+
+  const [selectedValues, setSelectedValues] = useState<Record<string, string>>(() => {
+    const first = variants[0];
+    const initial: Record<string, string> = {};
+    structuredOptions.forEach((opt, idx) => {
+      const val = first ? optionValue(first, idx) : null;
+      if (val) initial[opt.name] = val;
+    });
+    return initial;
+  });
   const [selectedId, setSelectedId] = useState(variants[0]?.id || '');
   const [isBuyingNow, setIsBuyingNow] = useState(false);
   const { addItem, closeCart, isLoading, error } = useCart();
   const router = useRouter();
 
-  const activeVariant = variants.find((v) => v.id === selectedId) || variants[0];
+  const activeVariant = useMemo(() => {
+    if (useStructuredSelector) {
+      const match = variants.find((v) =>
+        structuredOptions.every((opt, idx) => optionValue(v, idx) === selectedValues[opt.name])
+      );
+      return match || variants[0];
+    }
+    return variants.find((v) => v.id === selectedId) || variants[0];
+  }, [useStructuredSelector, structuredOptions, selectedValues, selectedId, variants]);
 
   const handleAddToCart = async () => {
     if (!activeVariant) return;
@@ -61,36 +99,70 @@ export function VariantSelector({ variants }: { variants: ProductVariant[] }) {
         )}
       </div>
 
-      {/* Variant Pills */}
-      <div>
-        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
-          Select Variant / Size:
-        </label>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {variants.map((v) => {
-            const isSelected = v.id === activeVariant.id;
-            return (
-              <button
-                key={v.id}
-                onClick={() => setSelectedId(v.id)}
-                style={{
-                  background: isSelected ? 'var(--primary-btn)' : 'var(--surface)',
-                  color: isSelected ? 'var(--primary-btn-text)' : 'var(--text)',
-                  border: isSelected ? '1px solid var(--primary-btn)' : '1px solid var(--border-color)',
-                  padding: '0.5rem 1rem',
-                  borderRadius: '0.5rem',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  fontSize: '0.875rem',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {v.title}
-              </button>
-            );
-          })}
+      {/* Variant Selector */}
+      {useStructuredSelector ? (
+        structuredOptions.map((opt) => (
+          <div key={opt.name}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+              {opt.name}: {selectedValues[opt.name]}
+            </label>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              {opt.values.map((val) => {
+                const isSelected = selectedValues[opt.name] === val;
+                return (
+                  <button
+                    key={val}
+                    onClick={() => setSelectedValues((prev) => ({ ...prev, [opt.name]: val }))}
+                    style={{
+                      background: isSelected ? 'var(--primary-btn)' : 'var(--surface)',
+                      color: isSelected ? 'var(--primary-btn-text)' : 'var(--text)',
+                      border: isSelected ? '1px solid var(--primary-btn)' : '1px solid var(--border-color)',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '0.5rem',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      fontSize: '0.875rem',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {val}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      ) : (
+        <div>
+          <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+            Select Variant / Size:
+          </label>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {variants.map((v) => {
+              const isSelected = v.id === activeVariant.id;
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => setSelectedId(v.id)}
+                  style={{
+                    background: isSelected ? 'var(--primary-btn)' : 'var(--surface)',
+                    color: isSelected ? 'var(--primary-btn-text)' : 'var(--text)',
+                    border: isSelected ? '1px solid var(--primary-btn)' : '1px solid var(--border-color)',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '0.5rem',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {v.title}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Order Actions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

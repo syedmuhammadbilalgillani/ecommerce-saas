@@ -114,6 +114,16 @@ export interface MerchantProductVariant {
   priceMinor: number;
   compareAtPriceMinor?: number | null;
   stock: number;
+  option1?: string | null;
+  option2?: string | null;
+  option3?: string | null;
+}
+
+export interface MerchantProductImage {
+  id: string;
+  url: string;
+  altText?: string | null;
+  position: number;
 }
 
 export interface MerchantProduct {
@@ -130,6 +140,7 @@ export interface MerchantProduct {
   options?: Array<{ name: string; values: string[] }> | null;
   isPublished: boolean;
   variants: MerchantProductVariant[];
+  images: MerchantProductImage[];
 }
 
 export interface MerchantOrder {
@@ -499,12 +510,31 @@ export async function updateProduct(productId: string, data: Record<string, unkn
 export async function updateVariant(
   productId: string,
   variantId: string,
-  data: { title?: string; sku?: string; priceMinor?: number; compareAtPriceMinor?: number | null }
+  data: {
+    title?: string;
+    sku?: string;
+    priceMinor?: number;
+    compareAtPriceMinor?: number | null;
+    option1?: string | null;
+    option2?: string | null;
+    option3?: string | null;
+  }
 ): Promise<MerchantProduct> {
   return request<MerchantProduct>(
     `/v1/merchant/products/${encodeURIComponent(productId)}/variants/${encodeURIComponent(variantId)}`,
     { method: 'PATCH', body: JSON.stringify(data) }
   );
+}
+
+/** Replaces a product's full image list, in the given order. */
+export async function setProductImages(
+  productId: string,
+  images: Array<{ url: string; altText?: string | null }>
+): Promise<MerchantProduct> {
+  return request<MerchantProduct>(`/v1/merchant/products/${encodeURIComponent(productId)}/images`, {
+    method: 'PATCH',
+    body: JSON.stringify({ images }),
+  });
 }
 
 /** Adds (positive) or removes (negative) stock. */

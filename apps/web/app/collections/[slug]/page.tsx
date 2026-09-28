@@ -54,7 +54,16 @@ export default async function CollectionPage({
           return (
             <div key={product.id} className="card">
               <div className="card-image-box">
-                <ShoppingBag size={32} strokeWidth={1.5} />
+                {product.images?.[0] ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={product.images[0].url}
+                    alt={product.images[0].altText || product.title}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <ShoppingBag size={32} strokeWidth={1.5} />
+                )}
               </div>
               <div style={{ padding: '1rem' }}>
                 {product.category && (
